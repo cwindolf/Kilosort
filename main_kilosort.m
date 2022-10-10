@@ -1,14 +1,14 @@
 function [] = main_kilosort(dataDir, scratchDir, configFile, chanMapFile, tStart, tEnd, NchanTOT)
 
-path0 = fileparts(mfilename('fullpath'))
+path0 = fileparts(mfilename('fullpath'));
 addpath(genpath(path0)) % path to kilosort folder
 
 ops.trange    = [tStart tEnd]; % time range to sort
 ops.NchanTOT  = NchanTOT; % total number of channels in your recording
 
-run(fullfile(pathToYourConfigFile, 'configFile384.m'))
+run(configFile)
 ops.fproc   = fullfile(scratchDir, 'temp_wh.dat'); % proc file on a fast SSD
-ops.chanMap = fullfile(pathToYourConfigFile, chanMapFile);
+ops.chanMap = chanMapFile;
 
 %% this block runs all the steps of the algorithm
 fprintf('Looking for data inside %s \n', dataDir)
@@ -16,7 +16,7 @@ fprintf('Looking for data inside %s \n', dataDir)
 % main parameter changes from Kilosort2 to v2.5
 ops.sig        = 20;  % spatial smoothness constant for registration
 ops.fshigh     = 300; % high-pass more aggresively
-ops.nblocks    = 5; % blocks for registration. 0 turns it off, 1 does rigid registration. Replaces "datashift" option. 
+ops.nblocks    = 1; % blocks for registration. 0 turns it off, 1 does rigid registration. Replaces "datashift" option. 
 
 % is there a channel map file in this folder?
 fs = dir(fullfile(dataDir, 'chan*.mat'));
