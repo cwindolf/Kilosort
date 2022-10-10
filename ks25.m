@@ -1,7 +1,7 @@
 %%
-% initial detection and registration runner
+% full Kilosort2.5 runner fn
 %%
-function [] = main_kilosort(dataDir, scratchDir, configFile, chanMapFile, tStart, tEnd, NchanTOT)
+function [] = ks25(dataDir, scratchDir, configFile, chanMapFile, tStart, tEnd, NchanTOT)
 
 path0 = fileparts(mfilename('fullpath'));
 addpath(genpath(path0)) % path to kilosort folder
@@ -39,41 +39,41 @@ rez = preprocessDataSub(ops);
 rez = datashift2(rez, 0); % last input is for shifting data
 
 % ORDER OF BATCHES IS NOW RANDOM, controlled by random number generator
-% iseed = 1;
+iseed = 1;
                  
 % main tracking and template matching algorithm
-% rez = learnAndSolve8b(rez, iseed);
+rez = learnAndSolve8b(rez, iseed);
 
 % OPTIONAL: remove double-counted spikes - solves issue in which individual spikes are assigned to multiple templates.
 % See issue 29: https://github.com/MouseLand/Kilosort/issues/29
 %rez = remove_ks2_duplicate_spikes(rez);
 
 % final merges
-% rez = find_merges(rez, 1);
+rez = find_merges(rez, 1);
 
 % final splits by SVD
-% rez = splitAllClusters(rez, 1);
+rez = splitAllClusters(rez, 1);
 
 % decide on cutoff
-% rez = set_cutoff(rez);
+rez = set_cutoff(rez);
 % eliminate widely spread waveforms (likely noise)
-% rez.good = get_good_units(rez);
+rez.good = get_good_units(rez);
 
-% fprintf('found %d good units \n', sum(rez.good>0))
+fprintf('found %d good units \n', sum(rez.good>0))
 
 % write to Phy
 % fprintf('Saving results to Phy  \n')
-% rezToPhy(rez, dataDir);
+rezToPhy(rez, dataDir);
 
 %% if you want to save the results to a Matlab file...
 
 % discard features in final rez file (too slow to save)
-% rez.cProj = [];
-% rez.cProjPC = [];
+rez.cProj = [];
+rez.cProjPC = [];
 
 % final time sorting of spikes, for apps that use st3 directly
-% [~, isort]   = sortrows(rez.st3);
-% rez.st3      = rez.st3(isort, :);
+[~, isort]   = sortrows(rez.st3);
+rez.st3      = rez.st3(isort, :);
 
 % Ensure all GPU arrays are transferred to CPU side before saving to .mat
 rez_fields = fieldnames(rez);
