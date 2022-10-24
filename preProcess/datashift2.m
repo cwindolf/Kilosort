@@ -31,6 +31,9 @@ spkTh = 8; % same as the usual "template amplitude", but for the generic templat
 [st3, rez] = standalone_detector(rez, spkTh);
 %%
 % binning width across Y (um)
+
+disp("Start registration...")
+tic
 dd = 5;
 
 % detected depths
@@ -89,6 +92,9 @@ else
     ysamp = dmin + dd * [1:dmax] - dd/2;
     [imin,yblk, F0, F0m] = align_block2(F, ysamp, ops.nblocks);
 end
+
+toc
+disp("Done.")
 
 %%
 if getOr(ops, 'fig', 1)  
