@@ -45,6 +45,10 @@ end
 batchstart = 0;
 max_t_samples = rez.ops.sampsToRead;
 for i = 1:size(p,1)
+    if ~mod(i, floor(size(p, 1) / 20))
+        fprintf('.')
+    end
+
     % end of current batch in samples
     batchend = min(max_t_samples, round(i * samples_per_bin));
     batchlen = batchend - batchstart;
@@ -58,6 +62,7 @@ for i = 1:size(p,1)
         break
     end
 end
+fprintf('\n')
 
 if batchend < max_t_samples
     disp("p's time domain was shorter than [tStart tEnd] which will probably be bad");
