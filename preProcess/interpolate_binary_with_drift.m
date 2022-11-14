@@ -80,7 +80,7 @@ end
 % load the batch
 fid = fopen(rez.ops.fproc, 'r+');
 fseek(fid, offset, 'bof');
-dat = fread(fid, [rez.ops.Nchan NT+ntb], '*int16')';
+dat = fread(fid, [rez.ops.Nchan batchlen+ntb], '*int16')';
 
 % 2D coordinates for interpolation 
 xp = cat(2, rez.xc, rez.yc);
@@ -101,12 +101,12 @@ dati = gpuArray(single(dat)) * gpuArray(M)';
 w_edge = linspace(0, 1, ntb)';
 dati(1:ntb, :) = w_edge .* dati(1:ntb, :) + (1 - w_edge) .* dprev;
 
-if size(dati,1)==NT+ntb
-    dprev = dati(NT+[1:ntb], :);
+if size(dati,1)==batchlen+ntb
+    dprev = dati(batchlen+[1:ntb], :);
 else
     dprev = [];
 end
-dati = dati(1:NT, :);
+dati = dati(1:batchlen, :);
 
 dat_cpu = gather(int16(dati));
 
