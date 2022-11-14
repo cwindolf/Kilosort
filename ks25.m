@@ -19,7 +19,7 @@ fprintf('Looking for data inside %s \n', dataDir)
 % main parameter changes from Kilosort2 to v2.5
 ops.sig        = 20;  % spatial smoothness constant for registration
 ops.fshigh     = 300; % high-pass more aggresively
-ops.nblocks    = 1; % blocks for registration. 0 turns it off, 1 does rigid registration. Replaces "datashift" option. 
+ops.nblocks    = 0; % blocks for registration. 0 turns it off, 1 does rigid registration. Replaces "datashift" option. 
 
 % is there a channel map file in this folder?
 fs = dir(fullfile(dataDir, 'chan*.mat'));
@@ -36,7 +36,7 @@ rez = preprocessDataSub(ops);
 %
 % NEW STEP TO DO DATA REGISTRATION
 % 0 means no correction here
-rez = datashift2(rez, 0); % last input is for shifting data
+rez = datashift2(rez, 1); % last input is for shifting data
 
 % ORDER OF BATCHES IS NOW RANDOM, controlled by random number generator
 iseed = 1;

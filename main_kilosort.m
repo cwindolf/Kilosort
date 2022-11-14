@@ -1,12 +1,9 @@
-%%
-% initial detection and registration runner
-%%
 function [] = main_kilosort(dataDir, scratchDir, configFile, chanMapFile, tStart, tEnd, NchanTOT)
 
 path0 = fileparts(mfilename('fullpath'));
 addpath(genpath(path0)) % path to kilosort folder
 
-ops.trange    = [tStart tEnd]; % time range to sort
+ops.trange    = [tStart tEnd] % time range to sort
 ops.NchanTOT  = NchanTOT; % total number of channels in your recording
 
 run(configFile)
@@ -22,21 +19,21 @@ ops.fshigh     = 300; % high-pass more aggresively
 ops.nblocks    = 1; % blocks for registration. 0 turns it off, 1 does rigid registration. Replaces "datashift" option. 
 
 % is there a channel map file in this folder?
-fs = dir(fullfile(dataDir, 'chan*.mat'));
-if ~isempty(fs)
-    ops.chanMap = fullfile(dataDir, fs(1).name);
-end
+% fs = dir(fullfile(dataDir, 'chan*.mat'));
+% if ~isempty(fs)
+%     ops.chanMap = fullfile(dataDir, fs(1).name);
+% end
 
 % find the binary file
 fs          = [dir(fullfile(dataDir, '*.bin')) dir(fullfile(dataDir, '*.dat'))];
-ops.fbinary = fullfile(dataDir, fs(1).name);
+ops.fbinary = fullfile(dataDir, fs(1).name)
 
 % preprocess data to create temp_wh.dat
 rez = preprocessDataSub(ops);
 %
 % NEW STEP TO DO DATA REGISTRATION
 % 0 means no correction here
-rez = datashift2(rez, 0); % last input is for shifting data
+rez = datashift2(rez, 1); % last input is for shifting data
 
 % ORDER OF BATCHES IS NOW RANDOM, controlled by random number generator
 % iseed = 1;
