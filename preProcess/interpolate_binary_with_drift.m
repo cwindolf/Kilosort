@@ -46,7 +46,7 @@ batchstart = 0;
 max_t_samples = rez.ops.sampsToRead;
 for i = 1:size(p,1)
     % end of current batch in samples
-    batchend = min(max_t_samples, round(i * p_rel_fs));
+    batchend = min(max_t_samples, round(i * samples_per_bin));
     batchlen = batchend - batchstart;
 
     dprev = shift_batch_on_disk_modified(rez, batchstart, batchlen, p(i), ysamp, rez.ops.sig, dprev, ntbuff);

@@ -54,7 +54,6 @@ st3 = zeros(1000000, 6);
 t0 = 0; %ceil(rez.ops.trange(1) * ops.fs); % I think this should be 0 all the time. 
 nsp = 0; % counter for total number of spikes
 %%
-tic
 for k = 1:ops.Nbatch
     % get a batch of whitened and filtered data
     dataRAW = get_batch(rez.ops, k);
