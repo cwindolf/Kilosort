@@ -42,9 +42,14 @@ end
 
 % loop: for each time bin of p, apply the kriging directly to the raw binary file
 % start of batch in samples
+fprintf("Interpolating data (20 dots total): ")
 batchstart = 0;
-max_t_samples = rez.ops.sampsToRead;
+% bugs when using this, actually a segfault that was confusing to debug... not sure why
+% max_t_samples = rez.ops.sampsToRead;
+max_t_samples = rez.ops.Nbatch * rez.ops.NT;
+tic
 for i = 1:size(p,1)
+    % a sort of progress bar with 20 ticks
     if ~mod(i, floor(size(p, 1) / 20))
         fprintf('.')
     end
@@ -62,7 +67,9 @@ for i = 1:size(p,1)
         break
     end
 end
+% close off the progress bar
 fprintf('\n')
+toc
 
 if batchend < max_t_samples
     disp("p's time domain was shorter than [tStart tEnd] which will probably be bad");
