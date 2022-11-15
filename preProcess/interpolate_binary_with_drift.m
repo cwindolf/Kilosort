@@ -102,7 +102,7 @@ dat = fread(fid, [rez.ops.Nchan batchlen+ntb], '*int16')';
 % when it comes to the padding logic. the other method can
 % assume all chunks are exactly the same time since KS makes
 % sure of this.
-nsampcurr = size(dat,2);
+nsampcurr = size(dat,1);
 if nsampcurr < batchlen+ntb
     % pad just so the code runs, but the padding will be thrown out below
     dat(:, nsampcurr+1:batchlen+ntb) = repmat(dat(:,nsampcurr), 1, batchlen+ntb-nsampcurr);
