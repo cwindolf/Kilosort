@@ -105,7 +105,7 @@ dat = fread(fid, [rez.ops.Nchan batchlen+ntb], '*int16')';
 nsampcurr = size(dat,1);
 if nsampcurr < batchlen+ntb
     % pad just so the code runs, but the padding will be thrown out below
-    dat(nsampcurr+1:batchlen+ntb) = repmat(dat(nsampcurr, :), batchlen+ntb-nsampcurr, 1);
+    dat(nsampcurr+1:batchlen+ntb, :) = repmat(dat(nsampcurr, :), batchlen+ntb-nsampcurr, 1);
 end
 
 % 2D coordinates for interpolation 
