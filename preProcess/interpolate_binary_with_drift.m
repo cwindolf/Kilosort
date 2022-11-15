@@ -105,13 +105,13 @@ dat = fread(fid, [rez.ops.Nchan batchlen+ntb], '*int16')';
 nsampcurr = size(dat,1);
 if nsampcurr < batchlen+ntb
     % pad just so the code runs, but the padding will be thrown out below
-    dat(:, nsampcurr+1:batchlen+ntb) = repmat(dat(:,nsampcurr), 1, batchlen+ntb-nsampcurr);
+    dat(nsampcurr+1:batchlen+ntb) = repmat(dat(nsampcurr, :), batchlen+ntb-nsampcurr, 1);
 end
 
 % 2D coordinates for interpolation 
 xp = cat(2, rez.xc, rez.yc);
 
-% 2D kernel of the original channel positions 
+% 2D kernel of the original channel positions
 Kxx = kernel2D(xp, xp, sig);
 % 2D kernel of the new channel positions
 yp = xp;
@@ -119,7 +119,7 @@ yp(:, 2) = yp(:, 2) - shifts;
 Kyx = kernel2D(yp, xp, sig);
 
 % kernel prediction matrix
-M = Kyx /(Kxx + .01 * eye(size(Kxx,1)));
+M = Kyx / (Kxx + .01 * eye(size(Kxx,1)));
 
 % the multiplication has to be done on the GPU
 dati = gpuArray(single(dat)) * gpuArray(M)';
@@ -129,10 +129,10 @@ dati(1:ntb, :) = w_edge .* dati(1:ntb, :) + (1 - w_edge) .* dprev;
 
 if size(dati,1)==batchlen+ntb
     dprev = dati(batchlen+[1:ntb], :);
-    dati = dati(:, 1:batchlen);
+    dati = dati(1:batchlen, :);
 else
     dprev = [];
-    dati = dati(:, 1:nsampcurr);
+    dati = dati(1:nsampcurr, :);
 end
 
 dat_cpu = gather(int16(dati));
