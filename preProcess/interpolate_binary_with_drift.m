@@ -94,6 +94,16 @@ fid = fopen(rez.ops.fproc, 'r+');
 fseek(fid, offset, 'bof');
 dat = fread(fid, [rez.ops.Nchan batchlen+ntb], '*int16')';
 
+% since we are loading batches differently, we are on our own
+% when it comes to the padding logic. the other method can
+% assume all chunks are exactly the same time since KS makes
+% sure of this.
+nsampcurr = size(dat,2);
+if nsampcurr < batchlen+ntb
+    % pad just so the code runs, but the padding will be thrown out below
+    dat(:, nsampcurr+1:batchlen+ntb) = repmat(dat(:,nsampcurr), 1, batchlen+ntb-nsampcurr);
+end
+
 % 2D coordinates for interpolation 
 xp = cat(2, rez.xc, rez.yc);
 
@@ -115,10 +125,11 @@ dati(1:ntb, :) = w_edge .* dati(1:ntb, :) + (1 - w_edge) .* dprev;
 
 if size(dati,1)==batchlen+ntb
     dprev = dati(batchlen+[1:ntb], :);
+    dati = dati(1:batchlen, :);
 else
     dprev = [];
+    dati = dati(1:nsampcurr, :);
 end
-dati = dati(1:batchlen, :);
 
 dat_cpu = gather(int16(dati));
 
