@@ -129,10 +129,10 @@ dati(1:ntb, :) = w_edge .* dati(1:ntb, :) + (1 - w_edge) .* dprev;
 
 if size(dati,1)==batchlen+ntb
     dprev = dati(batchlen+[1:ntb], :);
-    dati = dati(1:batchlen, :);
+    dati = dati(:, 1:batchlen);
 else
     dprev = [];
-    dati = dati(1:nsampcurr, :);
+    dati = dati(:, 1:nsampcurr);
 end
 
 dat_cpu = gather(int16(dati));
