@@ -90,7 +90,7 @@ if isfield(ops, 'midpoint')
 else
     % determine registration offsets 
     ysamp = dmin + dd * [1:dmax] - dd/2;
-    [imin,yblk, F0, F0m] = align_block2(F, ysamp, ops.nblocks);
+    [imin,yblk, F0, F0m] = align_block2(F, ysamp, ops.nblocks, ops.nBinsReg);
 end
 
 toc

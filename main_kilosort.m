@@ -1,4 +1,7 @@
-function [] = main_kilosort(dataDir, scratchDir, configFile, chanMapFile, tStart, tEnd, NchanTOT)
+%%
+% initial detection and registration runner
+%%
+function [] = main_kilosort(dataDir, scratchDir, configFile, chanMapFile, tStart, tEnd, NchanTOT, nBinsReg)
 
 path0 = fileparts(mfilename('fullpath'));
 addpath(genpath(path0)) % path to kilosort folder
@@ -17,6 +20,9 @@ fprintf('Looking for data inside %s \n', dataDir)
 ops.sig        = 20;  % spatial smoothness constant for registration
 ops.fshigh     = 300; % high-pass more aggresively
 ops.nblocks    = 1; % blocks for registration. 0 turns it off, 1 does rigid registration. Replaces "datashift" option. 
+
+% @cwindolf addition: registration bins parameter. not exposed by default! only this fork of the code uses it.
+ops.nBinsReg = nBinsReg;
 
 % is there a channel map file in this folder?
 % fs = dir(fullfile(dataDir, 'chan*.mat'));
