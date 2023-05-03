@@ -1,7 +1,7 @@
 %%
 % initial detection and registration runner
 %%
-function [] = main_kilosort(dataDir, scratchDir, configFile, chanMapFile, tStart, tEnd, NchanTOT, nBinsReg)
+function [] = main_kilosort(dataDir, scratchDir, configFile, chanMapFile, tStart, tEnd, NchanTOT, nBinsReg, depthBin)
 
 path0 = fileparts(mfilename('fullpath'));
 addpath(genpath(path0)) % path to kilosort folder
@@ -23,6 +23,7 @@ ops.nblocks    = 1; % blocks for registration. 0 turns it off, 1 does rigid regi
 
 % @cwindolf addition: registration bins parameter. not exposed by default! only this fork of the code uses it.
 ops.nBinsReg = nBinsReg;
+ops.depthBin = depthBin;
 
 % is there a channel map file in this folder?
 % fs = dir(fullfile(dataDir, 'chan*.mat'));
