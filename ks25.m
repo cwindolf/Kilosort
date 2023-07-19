@@ -28,7 +28,8 @@ if ~isempty(fs)
 end
 
 % find the binary file
-fs          = [dir(fullfile(dataDir, '*.bin')) dir(fullfile(dataDir, '*.dat'))];
+% added spikeinterface's default .raw extension
+fs          = [dir(fullfile(dataDir, '*.raw')) dir(fullfile(dataDir, '*.bin')) dir(fullfile(dataDir, '*.dat'))];
 ops.fbinary = fullfile(dataDir, fs(1).name);
 
 % preprocess data to create temp_wh.dat
