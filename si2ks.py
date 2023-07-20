@@ -8,8 +8,13 @@ import subprocess
 import shutil
 import tempfile
 
-def si2ks(si_folder, ks_folder):
-    rec = sc.read_binary_folder(si_folder)
+def si2ks(si_folder, ks_folder, geom=None):
+    try:
+        rec = sc.read_binary_folder(si_folder)
+    except:
+        assert geom is not None
+        rec = sc.read_binary(next(Path(si_folder).glob("*.bin")), 30000.0, num_channels=len(geom), dtype="float32")
+        
     rec = spre.scale(rec, gain=200.0, dtype=np.int16)
     shutil.rmtree(ks_folder)
     rec = rec.save_to_folder(ks_folder)
@@ -28,13 +33,13 @@ def si2ks(si_folder, ks_folder):
     
     return rec, cmpath
 
-def run_ks(rec, cmpath, ks_folder, cache_directory, full_ks=False):
+def run_ks(rec, cmpath, ks_folder, cache_directory, full_ks=False, n_bins_reg=5):
     this_dir = Path(__file__).parent
     config_m = this_dir / "configFiles/configFile384.m"
     if full_ks:
         cmd = f"ks25('{ks_folder}', '{cache_directory}', '{config_m}', '{cmpath}', 0, Inf, {rec.get_num_channels()})"
     else:
-        cmd = f"main_kilosort('{ks_folder}', '{cache_directory}', '{config_m}', '{cmpath}', 0, Inf, {rec.get_num_channels()}, 100, 5)"
+        cmd = f"main_kilosort('{ks_folder}', '{cache_directory}', '{config_m}', '{cmpath}', 0, Inf, {rec.get_num_channels()}, 100, {n_bins_reg})"
     
     subprocess.run(
         f'ml load matlab/2022b && cd {this_dir} && matlab -nodisplay -nosplash -r "{cmd}; exit;"',
@@ -49,9 +54,15 @@ if __name__ == "__main__":
     ap.add_argument("--ks-folder")
     ap.add_argument("--cache-dir-parent", default="/local")
     ap.add_argument("--full-ks", action="store_true")
+    ap.add_argument("--n-bins-reg", type=int, default=5, help="keep in mind that this is not the real number...")
+    ap.add_argument("--geom-npy", type=str, default=None)
 
     args = ap.parse_args()
+    
+    geom = None
+    if args.geom_npy:
+        geom = np.load(args.geom_npy)
 
-    rec, cmpath = si2ks(args.si_folder, args.ks_folder)
+    rec, cmpath = si2ks(args.si_folder, args.ks_folder, geom=geom)
     with tempfile.TemporaryDirectory(dir=args.cache_dir_parent) as tempdir:
-        run_ks(rec, cmpath, args.ks_folder, cache_directory=tempdir, full_ks=args.full_ks)
+        run_ks(rec, cmpath, args.ks_folder, cache_directory=tempdir, full_ks=args.full_ks, n_bins_reg=args.n_bins_reg)
