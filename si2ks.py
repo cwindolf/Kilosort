@@ -33,7 +33,7 @@ def si2ks(si_folder, ks_folder, geom=None):
     
     return rec, cmpath
 
-def run_ks(rec, cmpath, ks_folder, cache_directory, full_ks=False, n_bins_reg=5):
+def run_ks(rec, cmpath, ks_folder, cache_directory, ml_cmd=None, full_ks=False, n_bins_reg=5):
     this_dir = Path(__file__).parent
     config_m = this_dir / "configFiles/configFile384.m"
     if full_ks:
@@ -41,8 +41,13 @@ def run_ks(rec, cmpath, ks_folder, cache_directory, full_ks=False, n_bins_reg=5)
     else:
         cmd = f"main_kilosort('{ks_folder}', '{cache_directory}', '{config_m}', '{cmpath}', 0, Inf, {rec.get_num_channels()}, 100, {n_bins_reg})"
     
+    cmd = f'cd {this_dir} && matlab -nodisplay -nosplash -r "{cmd}; exit;"'
+
+    if ml_cmd:
+        cmd = f'{ml_cmd} && {cmd}'
+
     subprocess.run(
-        f'ml load matlab/2022b && cd {this_dir} && matlab -nodisplay -nosplash -r "{cmd}; exit;"',
+        cmd,
         shell=True,
     )
 
@@ -56,6 +61,7 @@ if __name__ == "__main__":
     ap.add_argument("--full-ks", action="store_true")
     ap.add_argument("--n-bins-reg", type=int, default=5, help="keep in mind that this is not the real number...")
     ap.add_argument("--geom-npy", type=str, default=None)
+    ap.add_argument("--ml-cmd", type=str, default=None)
 
     args = ap.parse_args()
     
@@ -65,4 +71,4 @@ if __name__ == "__main__":
 
     rec, cmpath = si2ks(args.si_folder, args.ks_folder, geom=geom)
     with tempfile.TemporaryDirectory(dir=args.cache_dir_parent) as tempdir:
-        run_ks(rec, cmpath, args.ks_folder, cache_directory=tempdir, full_ks=args.full_ks, n_bins_reg=args.n_bins_reg)
+        run_ks(rec, cmpath, args.ks_folder, ml_cmd=args.ml_cmd, cache_directory=tempdir, full_ks=args.full_ks, n_bins_reg=args.n_bins_reg)
