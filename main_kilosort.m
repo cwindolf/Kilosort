@@ -1,7 +1,7 @@
 %%
 % initial detection and registration runner
 %%
-function [] = main_kilosort(dataDir, scratchDir, configFile, chanMapFile, tStart, tEnd, NchanTOT, nBinsReg, depthBin)
+function [] = main_kilosort(dataDir, scratchDir, configFile, chanMapFile, tStart, tEnd, NchanTOT, nBinsReg, depthBin, nblocks)
 
 path0 = fileparts(mfilename('fullpath'));
 addpath(genpath(path0)) % path to kilosort folder
@@ -19,11 +19,20 @@ fprintf('Looking for data inside %s \n', dataDir)
 % main parameter changes from Kilosort2 to v2.5
 ops.sig        = 20;  % spatial smoothness constant for registration
 ops.fshigh     = 300; % high-pass more aggresively
-ops.nblocks    = 1; % blocks for registration. 0 turns it off, 1 does rigid registration. Replaces "datashift" option. 
+if ~exist('nblocks', 'var')
+    nblocks = 5
+end
+ops.nblocks    = nblocks; % blocks for registration. 0 turns it off, 1 does rigid registration. Replaces "datashift" option. 
 
 % @cwindolf addition: registration bins parameter. not exposed by default! only this fork of the code uses it.
 ops.nBinsReg = nBinsReg;
 ops.depthBin = depthBin;
+if nBinsReg < 0
+    ops.nBinsReg = 15 % the default. actually, it is 15 in one place and 5 in another.
+end
+if depthBin < 0
+    ops.depthBin = 5 % the default. depth bin size microns.
+end
 
 % is there a channel map file in this folder?
 % fs = dir(fullfile(dataDir, 'chan*.mat'));

@@ -1,6 +1,7 @@
 """Preprocessed spikeinterface binary -> KS style binary -> KS"""
 import numpy as np
 import spikeinterface.core as sc
+import spikeinterface.extractors as se
 import spikeinterface.preprocessing as spre
 from scipy.io import savemat
 from pathlib import Path
@@ -8,46 +9,64 @@ import subprocess
 import shutil
 import tempfile
 
-def si2ks(si_folder, ks_folder, geom=None):
-    try:
-        rec = sc.read_binary_folder(si_folder)
-    except:
-        assert geom is not None
-        rec = sc.read_binary(next(Path(si_folder).glob("*.bin")), 30000.0, num_channels=len(geom), dtype="float32")
+def si2ks(si_folder, ks_folder, geom=None, n_jobs=2, scaleproc=True, spikeglx=False):
+    if spikeglx:
+        rec = se.read_spikeglx(si_folder)
+        geom = rec.get_channel_locations()
+        assert si_folder == ks_folder
+    elif scaleproc:
+        try:
+            rec = sc.read_binary_folder(si_folder)
+            geom = rec.get_channel_locations()
+        except:
+            assert geom is not None
+            rec = sc.read_binary(next(Path(si_folder).glob("*.bin")), 30000.0, num_channels=len(geom), dtype="float32")
+            rec.set_dummy_probe_from_locations(geom)
         
-    rec = spre.scale(rec, gain=200.0, dtype=np.int16)
-    shutil.rmtree(ks_folder)
-    rec = rec.save_to_folder(ks_folder)
+        rec = spre.scale(rec, gain=200.0, dtype=np.int16)
+        ks_folder = Path(ks_folder)
+        if ks_folder.exists():
+            shutil.rmtree(ks_folder)
+        rec = rec.save_to_folder(ks_folder, n_jobs=n_jobs, chunk_memory="512M")
+    else:
+        assert ks_folder == si_folder
+        try:
+            rec = sc.read_binary_folder(si_folder)
+            geom = rec.get_channel_locations()
+        except:
+            assert geom is not None
 
     # also dump the chan map
     chanmap = dict(
-        chanMap=np.arange(1, rec.get_num_channels() + 1)[:, None],
-        chanMap0ind=np.arange(rec.get_num_channels())[:, None],
-        connected=np.ones(rec.get_num_channels())[:, None],
-        xcoords=rec.get_channel_locations()[:, 0, None],
-        ycoords=rec.get_channel_locations()[:, 1, None],
-        kcoords=np.ones(rec.get_num_channels())[:, None],
+        chanMap=np.arange(1, len(geom) + 1)[:, None],
+        chanMap0ind=np.arange(len(geom))[:, None],
+        connected=np.ones(len(geom))[:, None],
+        xcoords=geom[:, 0, None],
+        ycoords=geom[:, 1, None],
+        kcoords=np.ones(len(geom))[:, None],
     )
     cmpath = Path(ks_folder) / f"chanMap.mat"
     savemat(cmpath, chanmap)
     
-    return rec, cmpath
+    return len(geom), cmpath
 
-def run_ks(rec, cmpath, ks_folder, cache_directory, ml_cmd=None, full_ks=False, n_bins_reg=5):
+def run_ks(nc, cmpath, ks_folder, cache_directory, full_ks=False, nBinsReg=15, depthBin=5, nblocks=1, prefix_cmd='ml load matlab/2022b'):
     this_dir = Path(__file__).parent
     config_m = this_dir / "configFiles/configFile384.m"
     if full_ks:
-        cmd = f"ks25('{ks_folder}', '{cache_directory}', '{config_m}', '{cmpath}', 0, Inf, {rec.get_num_channels()})"
+        print("Full KS with default params!")
+        cmd = f"ks25('{ks_folder}', '{cache_directory}', '{config_m}', '{cmpath}', 0, Inf, {nc})"
     else:
-        cmd = f"main_kilosort('{ks_folder}', '{cache_directory}', '{config_m}', '{cmpath}', 0, Inf, {rec.get_num_channels()}, 100, {n_bins_reg})"
+        print("Not running full KS, just registration part")
+        cmd = f"main_kilosort('{ks_folder}', '{cache_directory}', '{config_m}', '{cmpath}', 0, Inf, {nc}, {nBinsReg}, {depthBin}, {nblocks})"
+        
+    matlab_cmd = f'matlab -nodisplay -nosplash -r "{cmd}; exit;"'
+    fullcmd = f"cd {this_dir} && {matlab_cmd}"
+    if prefix_cmd:
+        fullcmd = f"{prefix_cmd} && {fullcmd}"
     
-    cmd = f'cd {this_dir} && matlab -nodisplay -nosplash -r "{cmd}; exit;"'
-
-    if ml_cmd:
-        cmd = f'{ml_cmd} && {cmd}'
-
     subprocess.run(
-        cmd,
+        fullcmd,
         shell=True,
     )
 
@@ -59,16 +78,22 @@ if __name__ == "__main__":
     ap.add_argument("--ks-folder")
     ap.add_argument("--cache-dir-parent", default="/local")
     ap.add_argument("--full-ks", action="store_true")
-    ap.add_argument("--n-bins-reg", type=int, default=5, help="keep in mind that this is not the real number...")
+    ap.add_argument("--nblocks", type=int, default=5, help="keep in mind that this is not the real number...")
+    ap.add_argument("--nBinsReg", type=int, default=15)
+    ap.add_argument("--depthBin", type=int, default=5)
     ap.add_argument("--geom-npy", type=str, default=None)
-    ap.add_argument("--ml-cmd", type=str, default=None)
+    ap.add_argument("--prefix-cmd", type=str, default='ml load matlab/2022b')
+    ap.add_argument("--no-scaleproc", action="store_true")
+    ap.add_argument("--spikeglx", action="store_true")
 
     args = ap.parse_args()
+    
+    print("si2ks.py")
     
     geom = None
     if args.geom_npy:
         geom = np.load(args.geom_npy)
 
-    rec, cmpath = si2ks(args.si_folder, args.ks_folder, geom=geom)
+    nc, cmpath = si2ks(args.si_folder, args.ks_folder, geom=geom, scaleproc=not args.no_scaleproc, spikeglx=args.spikeglx)
     with tempfile.TemporaryDirectory(dir=args.cache_dir_parent) as tempdir:
-        run_ks(rec, cmpath, args.ks_folder, ml_cmd=args.ml_cmd, cache_directory=tempdir, full_ks=args.full_ks, n_bins_reg=args.n_bins_reg)
+        run_ks(nc, cmpath, args.ks_folder, cache_directory=tempdir, full_ks=args.full_ks, nblocks=args.nblocks, nBinsReg=args.nBinsReg, depthBin=args.depthBin, prefix_cmd=args.prefix_cmd)
