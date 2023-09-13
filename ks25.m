@@ -1,17 +1,17 @@
 %%
 % full Kilosort2.5 runner fn
 %%
-function [] = ks25(dataDir, scratchDir, configFile, chanMapFile, tStart, tEnd, NchanTOT)
+function rez = ks25(dataDir, scratchDir, configFile, chanMapFile, tStart, tEnd, nblocks, nBinsReg1, nBinsReg2, depthBin)
 
 path0 = fileparts(mfilename('fullpath'));
 addpath(genpath(path0)) % path to kilosort folder
 
 ops.trange    = [tStart tEnd]; % time range to sort
-ops.NchanTOT  = NchanTOT; % total number of channels in your recording
+% ops.NchanTOT  = NchanTOT; % total number of channels in your recording
 
 run(configFile)
 ops.fproc   = fullfile(scratchDir, 'temp_wh.dat'); % proc file on a fast SSD
-ops.chanMap = chanMapFile;
+ops.chanMap = load(chanMapFile);
 
 %% this block runs all the steps of the algorithm
 fprintf('Looking for data inside %s \n', dataDir)
@@ -19,25 +19,41 @@ fprintf('Looking for data inside %s \n', dataDir)
 % main parameter changes from Kilosort2 to v2.5
 ops.sig        = 20;  % spatial smoothness constant for registration
 ops.fshigh     = 300; % high-pass more aggresively
-ops.nblocks    = 0; % blocks for registration. 0 turns it off, 1 does rigid registration. Replaces "datashift" option. 
-
-% is there a channel map file in this folder?
-fs = dir(fullfile(dataDir, 'chan*.mat'));
-if ~isempty(fs)
-    ops.chanMap = fullfile(dataDir, fs(1).name);
+ops.nblocks    = nblocks; % blocks for registration. 0 turns it off, 1 does rigid registration. Replaces "datashift" option. 
+ops.nBinsReg1 = nBinsReg1;
+ops.nBinsReg2 = nBinsReg2;
+ops.depthBin = depthBin;
+if nBinsReg1 < 0
+    ops.nBinsReg1 = 15; % MouseLand v2.5
 end
+if nBinsReg2 < 0
+    ops.nBinsReg2 = 5; % MouseLand v2.5
+end
+if depthBin < 0
+    ops.depthBin = 5; % the default. depth bin size microns.
+end
+% is there a channel map file in this folder?
+% fs = dir(fullfile(dataDir, 'chan*.mat'));
+% if ~isempty(fs)
+%     ops.chanMap = fullfile(dataDir, fs(1).name);
+% end
+[cm, xc, yc, kc, nct] = loadChanMap(ops.chanMap);
+ops.NchanTOT = nct;
 
 % find the binary file
 % added spikeinterface's default .raw extension
 fs          = [dir(fullfile(dataDir, '*.raw')) dir(fullfile(dataDir, '*.bin')) dir(fullfile(dataDir, '*.dat'))];
 ops.fbinary = fullfile(dataDir, fs(1).name);
+ops
 
 % preprocess data to create temp_wh.dat
 rez = preprocessDataSub(ops);
+% st0 = rez.st0;
 %
 % NEW STEP TO DO DATA REGISTRATION
 % 0 means no correction here
 rez = datashift2(rez, 1); % last input is for shifting data
+% keep track of st0 please.
 
 % ORDER OF BATCHES IS NOW RANDOM, controlled by random number generator
 iseed = 1;
@@ -75,6 +91,9 @@ rez.cProjPC = [];
 % final time sorting of spikes, for apps that use st3 directly
 [~, isort]   = sortrows(rez.st3);
 rez.st3      = rez.st3(isort, :);
+
+% store st0 again
+% rez.st0 = st0;
 
 % Ensure all GPU arrays are transferred to CPU side before saving to .mat
 rez_fields = fieldnames(rez);

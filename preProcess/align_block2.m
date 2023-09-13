@@ -1,4 +1,4 @@
-function [imin,yblk, F0, F0m] = align_block2(F, ysamp, nblocks, nBinsReg)
+function [imin,yblk, F0, F0m] = align_block2(F, ysamp, nblocks, nBinsReg1, nBinsReg2)
 
 % F is y bins by amp bins by batches
 % ysamp are the coordinates of the y bins in um
@@ -6,7 +6,7 @@ function [imin,yblk, F0, F0m] = align_block2(F, ysamp, nblocks, nBinsReg)
 Nbatches = size(F,3);
 
 % look up and down this many y bins to find best alignment
-n = nBinsReg; % 15
+n = nBinsReg1; % 15
 dc = zeros(2*n+1, Nbatches);
 dt = -n:n;
 
@@ -65,7 +65,7 @@ yblk = zeros(length(ifirst), 1);
 
 % for each small block, we only look up and down this many samples to find
 % nonrigid shift
-n = nBinsReg; % 5
+n = nBinsReg2; % 5
 % n = 5;
 dt = -n:n;
 
