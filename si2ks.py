@@ -50,15 +50,15 @@ def si2ks(si_folder, ks_folder, geom=None, n_jobs=2, scaleproc=True, spikeglx=Fa
     
     return len(geom), cmpath
 
-def run_ks(nc, cmpath, ks_folder, cache_directory, full_ks=False, nBinsReg=15, depthBin=5, nblocks=1, prefix_cmd='ml load matlab/2022b'):
+def run_ks(nc, cmpath, ks_folder, cache_directory, tstart=0, tend="Inf", full_ks=False, nBinsReg=15, depthBin=5, nblocks=1, prefix_cmd='ml load matlab/2022b'):
     this_dir = Path(__file__).parent
     config_m = this_dir / "configFiles/configFile384.m"
     if full_ks:
         print("Full KS with default params!")
-        cmd = f"ks25('{ks_folder}', '{cache_directory}', '{config_m}', '{cmpath}', 0, Inf, {nc})"
+        cmd = f"ks25('{ks_folder}', '{cache_directory}', '{config_m}', '{cmpath}', {tstart}, {tend}, {nc})"
     else:
         print("Not running full KS, just registration part")
-        cmd = f"main_kilosort('{ks_folder}', '{cache_directory}', '{config_m}', '{cmpath}', 0, Inf, {nc}, {nBinsReg}, {depthBin}, {nblocks})"
+        cmd = f"main_kilosort('{ks_folder}', '{cache_directory}', '{config_m}', '{cmpath}', {tstart}, {tend}, {nc}, {nBinsReg}, {depthBin}, {nblocks})"
         
     matlab_cmd = f'matlab -nodisplay -nosplash -r "{cmd}; exit;"'
     fullcmd = f"cd {this_dir} && {matlab_cmd}"
@@ -85,10 +85,17 @@ if __name__ == "__main__":
     ap.add_argument("--prefix-cmd", type=str, default='ml load matlab/2022b')
     ap.add_argument("--no-scaleproc", action="store_true")
     ap.add_argument("--spikeglx", action="store_true")
+    ap.add_argument("--tstart", type=float, default=0)
+    ap.add_argument("--tend", type=float, default=np.inf)
 
     args = ap.parse_args()
     
     print("si2ks.py")
+
+    tstart = str(args.tstart)
+    tend = str(args.tend)
+    if args.tend == np.inf:
+        tend = "Inf"
     
     geom = None
     if args.geom_npy:
@@ -96,4 +103,4 @@ if __name__ == "__main__":
 
     nc, cmpath = si2ks(args.si_folder, args.ks_folder, geom=geom, scaleproc=not args.no_scaleproc, spikeglx=args.spikeglx)
     with tempfile.TemporaryDirectory(dir=args.cache_dir_parent) as tempdir:
-        run_ks(nc, cmpath, args.ks_folder, cache_directory=tempdir, full_ks=args.full_ks, nblocks=args.nblocks, nBinsReg=args.nBinsReg, depthBin=args.depthBin, prefix_cmd=args.prefix_cmd)
+        run_ks(nc, cmpath, args.ks_folder, tstart=tstart, tend=tend, cache_directory=tempdir, full_ks=args.full_ks, nblocks=args.nblocks, nBinsReg=args.nBinsReg, depthBin=args.depthBin, prefix_cmd=args.prefix_cmd)
