@@ -9,8 +9,8 @@ import subprocess
 import shutil
 import tempfile
 
-def si2ks(si_folder, ks_folder, geom=None, n_jobs=2, scaleproc=True, spikeglx=False):
-    if spikeglx:
+def si2ks(si_folder, ks_folder, geom=None, n_jobs=2, scaleproc=True, spikeglx=False, ks_prebake=False):
+    if ks_prebake:
         rec = se.read_spikeglx(si_folder)
         geom = rec.get_channel_locations()
         assert si_folder == ks_folder
@@ -22,7 +22,7 @@ def si2ks(si_folder, ks_folder, geom=None, n_jobs=2, scaleproc=True, spikeglx=Fa
             assert geom is not None
             rec = sc.read_binary(next(Path(si_folder).glob("*.bin")), 30000.0, num_channels=len(geom), dtype="float32")
             rec.set_dummy_probe_from_locations(geom)
-        
+
         rec = spre.scale(rec, gain=200.0, dtype=np.int16)
         ks_folder = Path(ks_folder)
         if ks_folder.exists():
@@ -50,9 +50,10 @@ def si2ks(si_folder, ks_folder, geom=None, n_jobs=2, scaleproc=True, spikeglx=Fa
     
     return len(geom), cmpath
 
-def run_ks(nc, cmpath, ks_folder, cache_directory, tstart=0, tend="Inf", full_ks=False, nBinsReg=15, depthBin=5, nblocks=1, prefix_cmd='ml load matlab/2022b'):
+def run_ks(nc, cmpath, ks_folder, cache_directory, tstart=0, tend="Inf", full_ks=False, nBinsReg=15, depthBin=5, nblocks=1, prefix_cmd='ml load matlab/2022b', config_m=None):
     this_dir = Path(__file__).parent
-    config_m = this_dir / "configFiles/configFile384.m"
+    if config_m is None:
+        config_m = this_dir / "configFiles/configFile384.m"
     if full_ks:
         print("Full KS with default params!")
         cmd = f"ks25('{ks_folder}', '{cache_directory}', '{config_m}', '{cmpath}', {tstart}, {tend}, {nc})"
@@ -76,7 +77,7 @@ if __name__ == "__main__":
 
     ap.add_argument("--si-folder")
     ap.add_argument("--ks-folder")
-    ap.add_argument("--cache-dir-parent", default="/local")
+    ap.add_argument("--cache-dir-parent", default=None)
     ap.add_argument("--full-ks", action="store_true")
     ap.add_argument("--nblocks", type=int, default=5, help="keep in mind that this is not the real number...")
     ap.add_argument("--nBinsReg", type=int, default=15)
@@ -89,14 +90,13 @@ if __name__ == "__main__":
     ap.add_argument("--tend", type=float, default=np.inf)
 
     args = ap.parse_args()
-    
+
     print("si2ks.py")
 
     tstart = str(args.tstart)
     tend = str(args.tend)
     if args.tend == np.inf:
         tend = "Inf"
-    
     geom = None
     if args.geom_npy:
         geom = np.load(args.geom_npy)

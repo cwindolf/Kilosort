@@ -19,6 +19,7 @@ fprintf('Looking for data inside %s \n', dataDir)
 % main parameter changes from Kilosort2 to v2.5
 ops.sig        = 20;  % spatial smoothness constant for registration
 ops.fshigh     = 300; % high-pass more aggresively
+~exist('nblocks', 'var')
 if ~exist('nblocks', 'var')
     nblocks = 5;
 end
