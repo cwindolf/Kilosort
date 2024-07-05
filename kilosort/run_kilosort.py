@@ -174,14 +174,37 @@ def run_kilosort(settings, probe=None, probe_name=None, filename=None,
             io.save_preprocessing(results_dir / 'temp_wh.dat', ops, bfile)
 
         # Sort spikes and save results
-        st,tF, _, _ = detect_spikes(ops, device, bfile, tic0=tic0,
+        logger.info("About to run detect_spikes")
+        st,tF, Wall, clu, st0 = detect_spikes(ops, device, bfile, tic0=tic0,
                                     progress_bar=progress_bar)
-        clu, Wall = cluster_spikes(st, tF, ops, device, bfile, tic0=tic0,
+        first_clustering = np.c_[
+            # trying to reconstruct peak times...
+            st0[:, 6] + ops['batch_size'] * st0[:, 4] - ops['nt'] - ops['nt0min'],
+            clu,
+            st0[:, 2],
+        ]
+        # first_clustering = st0
+        first_matching = st
+        logger.info("About to run cluster_spikes")
+        clu, Wall, clu_pre_merge = cluster_spikes(st, tF, ops, device, bfile, tic0=tic0,
                                 progress_bar=progress_bar)
+        final_pre_merge = st.copy()
+        final_pre_merge[:, 0] = clu_pre_merge
+        final_clustering = st.copy()
+        final_pre_merge[:, 0] = clu
+        logger.info("About to run save_sorting")
         ops, similar_templates, is_ref, est_contam_rate, kept_spikes = \
             save_sorting(ops, results_dir, st, clu, tF, Wall, bfile.imin, tic0,
                         save_extra_vars=save_extra_vars,
                         save_preprocessed_copy=save_preprocessed_copy)
+
+        detailed_results = dict(
+            first_clustering=first_clustering,
+            # st0=st0,
+            first_matching=first_matching,
+            final_pre_merge=final_pre_merge,
+            final_clustering=final_clustering,
+        )
     except:
         # This makes sure the full traceback is written to log file.
         logger.exception('Encountered error in `run_kilosort`:')
@@ -190,7 +213,7 @@ def run_kilosort(settings, probe=None, probe_name=None, filename=None,
         raise
 
     return ops, st, clu, tF, Wall, similar_templates, \
-           is_ref, est_contam_rate, kept_spikes
+           is_ref, est_contam_rate, kept_spikes, detailed_results
 
 
 def set_files(settings, filename, probe, probe_name, data_dir, results_dir):
@@ -262,7 +285,7 @@ def setup_logger(results_dir):
 
     # define a Handler which writes INFO messages or higher to the sys.stderr
     console = logging.StreamHandler()
-    console.setLevel(logging.INFO)
+    console.setLevel(logging.DEBUG)
     # set a format which is simpler for console use
     console_formatter = logging.Formatter('%(name)-12s: %(message)s')
     console.setFormatter(console_formatter)
@@ -533,6 +556,7 @@ def detect_spikes(ops, device, bfile, tic0=np.nan, progress_bar=None):
     logger.info('-'*40)
     clu, Wall = clustering_qr.run(ops, st0, tF, mode='spikes', device=device,
                                   progress_bar=progress_bar)
+    logger.info(f"first clustering {clu=} {clu.shape=} {st0.shape=}")
     Wall3 = template_matching.postprocess_templates(Wall, ops, clu, st0, device=device)
     logger.info(f'{clu.max()+1} clusters found, in {time.time()-tic : .2f}s; ' +
                 f'total {time.time()-tic0 : .2f}s')
@@ -545,6 +569,7 @@ def detect_spikes(ops, device, bfile, tic0=np.nan, progress_bar=None):
     logger.info('-'*40)
     st, tF, ops = template_matching.extract(ops, bfile, Wall3, device=device,
                                                  progress_bar=progress_bar)
+    logger.info(f"first matching {st=} {st.shape=}")
     logger.info(f'{len(st)} spikes extracted in {time.time()-tic : .2f}s; ' +
                 f'total {time.time()-tic0 : .2f}s')
     logger.debug(f'st shape: {st.shape}')
@@ -552,7 +577,7 @@ def detect_spikes(ops, device, bfile, tic0=np.nan, progress_bar=None):
     logger.debug(f'iCC shape: {ops["iCC"].shape}')
     logger.debug(f'iU shape: {ops["iU"].shape}')
 
-    return st, tF, Wall, clu
+    return st, tF, Wall, clu, st0
 
 
 def cluster_spikes(st, tF, ops, device, bfile, tic0=np.nan, progress_bar=None):
@@ -566,6 +591,7 @@ def cluster_spikes(st, tF, ops, device, bfile, tic0=np.nan, progress_bar=None):
                 f'total {time.time()-tic0 : .2f}s')
     logger.debug(f'clu shape: {clu.shape}')
     logger.debug(f'Wall shape: {Wall.shape}')
+    final_pre_merge = clu.copy()
 
     tic = time.time()
     logger.info(' ')
@@ -581,7 +607,7 @@ def cluster_spikes(st, tF, ops, device, bfile, tic0=np.nan, progress_bar=None):
 
     bfile.close()
 
-    return clu, Wall
+    return clu, Wall, final_pre_merge
 
 
 def save_sorting(ops, results_dir, st, clu, tF, Wall, imin, tic0=np.nan,
