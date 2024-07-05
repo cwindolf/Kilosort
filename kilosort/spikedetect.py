@@ -245,7 +245,8 @@ def run(ops, bfile, device=torch.device('cuda'), progress_bar=None,
     weigh = torch.permute(weigh, (2, 0, 1)).contiguous()
     weigh = weigh / (weigh**2).sum(1).unsqueeze(1)**.5
 
-    st = np.zeros((10**6, 6), 'float64')
+    # st = np.zeros((10**6, 6), 'float64')
+    st = np.zeros((10**6, 7), 'float64')
     tF = np.zeros((10**6, nC , ops['settings']['n_pcs']), 'float32')
 
     k = 0
@@ -278,6 +279,7 @@ def run(ops, bfile, device=torch.device('cuda'), progress_bar=None,
             st[k:k+nsp,3] = imax.cpu().numpy()
             st[k:k+nsp,4] = ibatch
             st[k:k+nsp,5] = xy[:,0].cpu().numpy()
+            st[k:k+nsp,6] = xy[:,1].cpu().numpy()
 
             k = k + nsp
             
