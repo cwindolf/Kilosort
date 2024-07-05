@@ -252,9 +252,9 @@ def run_kilosort(settings, probe=None, probe_name=None, filename=None,
         clu, Wall, clu_pre_merge = cluster_spikes(st, tF, ops, device, bfile, tic0=tic0,
                                 progress_bar=progress_bar)
         final_pre_merge = st.copy()
-        final_pre_merge[:, 0] = clu_pre_merge
+        final_pre_merge[:, 1] = clu_pre_merge
         final_clustering = st.copy()
-        final_pre_merge[:, 0] = clu
+        final_clustering[:, 1] = clu
         logger.info("About to run save_sorting")
         ops, similar_templates, is_ref, est_contam_rate, kept_spikes = \
             save_sorting(ops, results_dir, st, clu, tF, Wall, bfile.imin, tic0,
