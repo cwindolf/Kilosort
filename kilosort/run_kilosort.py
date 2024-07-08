@@ -151,7 +151,7 @@ def run_kilosort(settings, probe=None, probe_name=None, filename=None,
     For documentation of saved files, see `kilosort.io.save_to_phy`.
 
     """
-
+    ctics = {}
     # Configure settings, ops, and file paths
     if settings is None or settings.get('n_chan_bin', None) is None:
         raise ValueError(
@@ -209,6 +209,7 @@ def run_kilosort(settings, probe=None, probe_name=None, filename=None,
             )
 
         tic0 = time.time()
+        ctics["start"] = time.perf_counter()
         ops = initialize_ops(settings, probe, data_dtype, do_CAR, invert_sign,
                             device, save_preprocessed_copy)
         # Remove some stuff that doesn't need to be printed twice, then pretty-print
@@ -235,11 +236,13 @@ def run_kilosort(settings, probe=None, probe_name=None, filename=None,
 
         if save_preprocessed_copy:
             io.save_preprocessing(results_dir / 'temp_wh.dat', ops, bfile)
+        ctics["ppx"] = time.perf_counter()
 
         # Sort spikes and save results
         logger.info("About to run detect_spikes")
-        st,tF, Wall, clu, st0 = detect_spikes(ops, device, bfile, tic0=tic0,
+        st,tF, Wall, clu, st0, newtimes = detect_spikes(ops, device, bfile, tic0=tic0,
                                     progress_bar=progress_bar)
+        ctics.update(newtimes)
         first_clustering = np.c_[
             # trying to reconstruct peak times...
             st0[:, 6] + ops['batch_size'] * st0[:, 4] - ops['nt'] - ops['nt0min'],
@@ -249,8 +252,9 @@ def run_kilosort(settings, probe=None, probe_name=None, filename=None,
         # first_clustering = st0
         first_matching = st
         logger.info("About to run cluster_spikes")
-        clu, Wall, clu_pre_merge = cluster_spikes(st, tF, ops, device, bfile, tic0=tic0,
+        clu, Wall, clu_pre_merge, newtimes = cluster_spikes(st, tF, ops, device, bfile, tic0=tic0,
                                 progress_bar=progress_bar)
+        ctics.update(newtimes)
         final_pre_merge = st.copy()
         final_pre_merge[:, 1] = clu_pre_merge
         final_clustering = st.copy()
@@ -281,7 +285,7 @@ def run_kilosort(settings, probe=None, probe_name=None, filename=None,
         raise
 
     return ops, st, clu, tF, Wall, similar_templates, \
-           is_ref, est_contam_rate, kept_spikes, detailed_results
+           is_ref, est_contam_rate, kept_spikes, detailed_results, ctics
 
 
 def set_files(settings, filename, probe, probe_name,
@@ -637,7 +641,7 @@ def detect_spikes(ops, device, bfile, tic0=np.nan, progress_bar=None,
         (n_clusters, n_channels, n_pcs).
 
     """
-
+    ctics = {}
     tic = time.time()
     logger.info(' ')
     logger.info(f'Extracting spikes using templates')
@@ -646,6 +650,7 @@ def detect_spikes(ops, device, bfile, tic0=np.nan, progress_bar=None,
         ops, bfile, device=device, progress_bar=progress_bar,
         clear_cache=clear_cache
         )
+    ctics["detect0"] = time.perf_counter()
     tF = torch.from_numpy(tF)
     logger.info(f'{len(st0)} spikes extracted in {time.time()-tic : .2f}s; ' + 
                 f'total {time.time()-tic0 : .2f}s')
@@ -662,6 +667,7 @@ def detect_spikes(ops, device, bfile, tic0=np.nan, progress_bar=None,
         ops, st0, tF, mode='spikes', device=device,
         progress_bar=progress_bar, clear_cache=clear_cache
     )
+    ctics["first_clustering"] = time.perf_counter()
     logger.info(f"first clustering {clu=} {clu.shape=} {st0.shape=}")
     Wall3 = template_matching.postprocess_templates(Wall, ops, clu, st0, device=device)
     logger.info(f'{clu.max()+1} clusters found, in {time.time()-tic : .2f}s; ' +
@@ -675,6 +681,7 @@ def detect_spikes(ops, device, bfile, tic0=np.nan, progress_bar=None,
     logger.info('-'*40)
     st, tF, ops = template_matching.extract(ops, bfile, Wall3, device=device,
                                                  progress_bar=progress_bar)
+    ctics["first_matching"] = time.perf_counter()
     logger.info(f"first matching {st=} {st.shape=}")
     logger.info(f'{len(st)} spikes extracted in {time.time()-tic : .2f}s; ' +
                 f'total {time.time()-tic0 : .2f}s')
@@ -722,6 +729,7 @@ def cluster_spikes(st, tF, ops, device, bfile, tic0=np.nan, progress_bar=None,
         (n_clusters, n_channels, n_pcs).
     
     """
+    ctics = {}
     tic = time.time()
     logger.info(' ')
     logger.info('Final clustering')
@@ -730,6 +738,7 @@ def cluster_spikes(st, tF, ops, device, bfile, tic0=np.nan, progress_bar=None,
         ops, st, tF,  mode = 'template', device=device, progress_bar=progress_bar,
         clear_cache=clear_cache
         )
+    ctics["final_pre_merge"] = time.perf_counter()
     logger.info(f'{clu.max()+1} clusters found, in {time.time()-tic : .2f}s; ' + 
                 f'total {time.time()-tic0 : .2f}s')
     logger.debug(f'clu shape: {clu.shape}')
@@ -742,6 +751,7 @@ def cluster_spikes(st, tF, ops, device, bfile, tic0=np.nan, progress_bar=None,
     logger.info('-'*40)
     Wall, clu, is_ref = template_matching.merging_function(ops, Wall, clu, st[:,0],
                                                            device=device)
+    ctics["final_clustering"] = time.perf_counter()
     clu = clu.astype('int32')
     logger.info(f'{clu.max()+1} units found, in {time.time()-tic : .2f}s; ' + 
                 f'total {time.time()-tic0 : .2f}s')
@@ -753,7 +763,7 @@ def cluster_spikes(st, tF, ops, device, bfile, tic0=np.nan, progress_bar=None,
     log_performance(logger, 'info', 'Resource usage after clustering')
     log_cuda_details(logger)
 
-    return clu, Wall, final_pre_merge
+    return clu, Wall, final_pre_merge, ctics
 
 
 def save_sorting(ops, results_dir, st, clu, tF, Wall, imin, tic0=np.nan,
