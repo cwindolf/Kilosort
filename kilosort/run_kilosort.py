@@ -27,7 +27,7 @@ def run_kilosort(settings, probe=None, probe_name=None, filename=None,
                  data_dir=None, file_object=None, results_dir=None,
                  data_dtype=None, do_CAR=True, invert_sign=False, device=None,
                  progress_bar=None, save_extra_vars=False,
-                 save_preprocessed_copy=False):
+                 save_preprocessed_copy=False, dredge_motion_est=None):
     """Run full spike sorting pipeline on specified data.
     
     Parameters
@@ -164,7 +164,7 @@ def run_kilosort(settings, probe=None, probe_name=None, filename=None,
         torch.random.manual_seed(1)
         ops, bfile, st0 = compute_drift_correction(
             ops, device, tic0=tic0, progress_bar=progress_bar,
-            file_object=file_object
+            file_object=file_object, dredge_motion_est=dredge_motion_est
             )
 
         # Check scale of data for log file
@@ -445,7 +445,7 @@ def compute_preprocessing(ops, device, tic0=np.nan, file_object=None):
 
 
 def compute_drift_correction(ops, device, tic0=np.nan, progress_bar=None,
-                             file_object=None):
+                             file_object=None, dredge_motion_est=None):
     """Compute drift correction parameters and save them to `ops`.
 
     Parameters
@@ -489,7 +489,7 @@ def compute_drift_correction(ops, device, tic0=np.nan, progress_bar=None,
         file_object=file_object
         )
 
-    ops, st = datashift.run(ops, bfile, device=device, progress_bar=progress_bar)
+    ops, st = datashift.run(ops, bfile, device=device, progress_bar=progress_bar, dredge_motion_est=dredge_motion_est)
     bfile.close()
     logger.info(f'drift computed in {time.time()-tic : .2f}s; ' + 
                 f'total {time.time()-tic0 : .2f}s')
