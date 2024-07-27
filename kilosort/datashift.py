@@ -183,23 +183,19 @@ def kernel2D(x, y, sig = 1):
     Kn = np.exp(-ds / (2*sig**2))
     return Kn
 
-def dredge_dshift(dredge_motion_est, ops):
+def dredge_dshift(dredge_motion_est, ops, yblk):
     # time coords
     Nbatches = ops['Nbatches']
     batch_len_s = ops['batch_size'] / ops['fs']
     batch_starts_s = batch_len_s * np.arange(Nbatches)
     batch_centers_s = batch_starts_s + 0.5 * batch_len_s
 
-    # y coords, as KS does it
-    ymin = ops['yc'].min()
-    ymax = ops['yc'].max()
-
-
-    nblocks = ops['nblocks']
-    nybins = F.shape[1]
-    yl = nybins//nblocks
-    ifirst = np.round(np.linspace(0,nybins-yl, 2 *nblocks-1)).astype('int32')
-    ilast = ifirst + yl
+    ddshift = dredge_motion_est.disp_at_s(
+        batch_centers_s,
+        np.squeeze(yblk),
+        grid=True,
+    )
+    return -ddshift.T
 
 
 def run(ops, bfile, device=torch.device('cuda'), progress_bar=None, clear_cache=False, dredge_motion_est=None):
@@ -230,8 +226,9 @@ def run(ops, bfile, device=torch.device('cuda'), progress_bar=None, clear_cache=
     print(f"{yblk.shape=}")
     print(f"{dshift.shape=} {dshift.min(0)=} {dshift.max(0)=}{dshift.min(1)=} {dshift.max(1)=} ")
     if dredge_motion_est is not None:
-        ddshift = dredge_dshift(dredge_motion_est, ops)
+        ddshift = dredge_dshift(dredge_motion_est, ops, yblk)
         print(f"{ddshift.shape=} {ddshift.min(0)=} {ddshift.max(0)=}{ddshift.min(1)=} {ddshift.max(1)=} ")
+        dshift = ddshift
 
     # we save the variables needed for drift correction during the data preprocessing step
     ops['yblk'] = yblk
