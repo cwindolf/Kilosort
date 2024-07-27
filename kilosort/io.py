@@ -168,8 +168,45 @@ def save_probe(probe_dict, filepath):
                     f"All probe variables must have the same length."
                 )
 
+    # Create parent directories if they do not exist, then save probe.
+    Path(filepath).parent.mkdir(parents=True, exist_ok=True)
     with open(filepath, 'w') as f:
         f.write(json.dumps(d))
+
+
+def remove_bad_channels(probe, bad_channels):
+    """Creates a new probe dictionary with listed channels (data rows) removed.
+    
+    Parameters
+    ----------
+    probe : dict.
+        A Kilosort4 probe dictionary, as returned by `kilosort.io.load_probe`.
+    bad_channels : list.
+        A list of channel indices (rows in the binary file) that should not be
+        included in sorting. Listing channels here is equivalent to excluding
+        them from the probe dictionary.
+
+    Returns
+    -------
+    probe : dict.
+    
+    """
+    probe = probe.copy()
+
+    bad_idx = np.empty_like(bad_channels, dtype=int)
+    for i, k in enumerate(bad_channels):
+        try:
+            idx = np.where(probe['chanMap'] == k)[0][0]
+        except IndexError:
+            raise IndexError(f"Channel '{k}' was not in probe['chanMap']")
+        bad_idx[i] = idx
+    probe['xc'] = np.delete(probe['xc'], bad_idx)
+    probe['yc'] = np.delete(probe['yc'], bad_idx)
+    probe['kcoords'] = np.delete(probe['kcoords'], bad_idx)
+    probe['chanMap'] = np.delete(probe['chanMap'], bad_idx)
+    probe['n_chan'] = probe['n_chan'] - bad_idx.size
+
+    return probe
 
 
 def save_to_phy(st, clu, tF, Wall, probe, ops, imin, results_dir=None,
@@ -433,6 +470,13 @@ class BinaryRWFile:
         self.imax = total_samples if tmax==np.inf else min(int(tmax*fs), total_samples)
         self.n_batches = int(np.ceil(self.n_samples / self.NT))
 
+        # Check if last batch is too small. If so, drop those samples.
+        a, b = self.get_batch_edges(self.n_batches-1)
+        batch_size = int(b - a - self.nt)  # Unclear why this casts to float
+        if batch_size < self.nt:
+            self.n_batches -= 1
+            self.imax -= batch_size
+
         mode = 'w+' if write else 'r'
         # Must use total samples for file shape, otherwise the end of the data
         # gets cut off if tmin,tmax are set.
@@ -550,11 +594,7 @@ class BinaryRWFile:
 
         return tuple(new_idx)
 
-    def padded_batch_to_torch(self, ibatch, return_inds=False):
-        """ read batches from file """
-        if self.file is None:
-            raise ValueError('Binary file has been closed, data not accessible.')
-
+    def get_batch_edges(self, ibatch):
         if ibatch==0:
             bstart = self.imin
             bend = self.imin + self.NT + self.nt
@@ -565,6 +605,15 @@ class BinaryRWFile:
             ibatch = np.uint64(ibatch)
             bstart = np.uint64(self.imin + (ibatch * self.NT) - self.nt)
             bend = min(self.imax, np.uint64(bstart + self.NT + 2*self.nt))
+
+        return bstart, bend
+
+    def padded_batch_to_torch(self, ibatch, return_inds=False):
+        """ read batches from file """
+        if self.file is None:
+            raise ValueError('Binary file has been closed, data not accessible.')
+
+        bstart, bend = self.get_batch_edges(ibatch)
         data = self.file[bstart : bend]
         data = data.T
 

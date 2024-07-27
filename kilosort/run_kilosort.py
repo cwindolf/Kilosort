@@ -27,7 +27,8 @@ def run_kilosort(settings, probe=None, probe_name=None, filename=None,
                  data_dir=None, file_object=None, results_dir=None,
                  data_dtype=None, do_CAR=True, invert_sign=False, device=None,
                  progress_bar=None, save_extra_vars=False,
-                 save_preprocessed_copy=False, dredge_motion_est=None):
+                 save_preprocessed_copy=False, bad_channels=None,
+                 dredge_motion_est=None):
     """Run full spike sorting pipeline on specified data.
     
     Parameters
@@ -86,6 +87,10 @@ def run_kilosort(settings, probe=None, probe_name=None, filename=None,
         If True, save a pre-processed copy of the data (including drift
         correction) to `temp_wh.dat` in the results directory and format Phy
         output to use that copy of the data.
+    bad_channels : list; optional.
+        A list of channel indices (rows in the binary file) that should not be
+        included in sorting. Listing channels here is equivalent to excluding
+        them from the probe dictionary.
     
     Raises
     ------
@@ -110,7 +115,7 @@ def run_kilosort(settings, probe=None, probe_name=None, filename=None,
     settings = {**DEFAULT_SETTINGS, **settings}
     # NOTE: This modifies settings in-place
     filename, data_dir, results_dir, probe = \
-        set_files(settings, filename, probe, probe_name, data_dir, results_dir)
+        set_files(settings, filename, probe, probe_name, data_dir, results_dir, bad_channels)
     setup_logger(results_dir)
 
     try:
@@ -220,7 +225,8 @@ def run_kilosort(settings, probe=None, probe_name=None, filename=None,
            is_ref, est_contam_rate, kept_spikes, detailed_results, ctics
 
 
-def set_files(settings, filename, probe, probe_name, data_dir, results_dir):
+def set_files(settings, filename, probe, probe_name,
+              data_dir, results_dir, bad_channels):
     """Parse file and directory information for data, probe, and results."""
 
     # Check for filename 
@@ -271,6 +277,9 @@ def set_files(settings, filename, probe, probe_name, data_dir, results_dir):
         # with some pytorch functions.
         probe['xc'] = probe['xc'].astype(np.float32)
         probe['yc'] = probe['yc'].astype(np.float32)
+
+    if bad_channels is not None:
+        probe = io.remove_bad_channels(probe, bad_channels)
 
     return filename, data_dir, results_dir, probe
 
@@ -688,6 +697,69 @@ def save_sorting(ops, results_dir, st, clu, tF, Wall, imin, tic0=np.nan,
 
 
 def load_sorting(results_dir, device=None, load_extra_vars=False):
+    '''Load saved sorting results into memory.
+    
+    Parameters
+    ----------
+    results_dir : str or pathlib.Path
+        Directory where results were saved.
+    device : torch.device; optional.
+        CPU or GPU device to use to load Pytorch tensors. By default, PyTorch
+        will use the first detected GPU. If no GPUs are detected, CPU will be
+        used. To set this manually, specify `device = torch.device(<device_name>)`.
+        See PyTorch documentation for full description.
+    load_extra_vars : default=False.
+        If True, load tF, Wall, and full copies of st, clu, and spike amplitudes
+        in addition to the other variables.
+
+    Returns
+    -------
+    ops : dict
+        Dictionary storing settings and results for all algorithmic steps.
+    st : np.ndarray
+        1D vector of spike times (in samples) for all clusters. This is *only*
+        the first column of the 3-column array returned by `run_kilosort`.
+    clu : np.ndarray
+        1D vector of cluster ids indicating which spike came from which cluster,
+        same shape as `st`.
+    similar_templates : np.ndarray.
+        Similarity score between each pair of clusters, computed as correlation
+        between clusters. Shape (n_clusters, n_clusters).
+    is_ref : np.ndarray.
+        1D boolean array with shape (n_clusters,) indicating whether each
+        cluster is refractory.
+    est_contam_rate : np.ndarray.
+        Contamination rate for each cluster, computed as fraction of refractory
+        period violations relative to expectation based on a Poisson process.
+        Shape (n_clusters,).
+    kept_spikes : np.ndarray.
+        Boolean mask with shape (n_spikes,) that is False for spikes that were
+        removed by `kilosort.postprocessing.remove_duplicate_spikes`
+        and True otherwise.
+    tF : torch.Tensor.
+        Only returned if `load_extra_vars` is True.
+        PC features for each spike, with shape (n_spikes, nearest_chans, n_pcs)
+    Wall : torch.Tensor.
+        Only returned if `load_extra_vars` is True.
+        PC feature representation of spike waveforms for each cluster, with shape
+        (n_clusters, n_channels, n_pcs).
+    full_st : np.ndarray.
+        Only returned if `load_extra_vars` is True.
+        3-column array of peak time (in samples), template, and amplitude for
+        each spike.
+        Includes spikes removed by `kilosort.postprocessing.remove_duplicate_spikes`.
+    full_clu : np.ndarray.
+        Only returned if `load_extra_vars` is True.
+        1D vector of cluster ids indicating which spike came from which cluster,
+        same shape as `st[:,0]`.
+        Includes spikes removed by `kilosort.postprocessing.remove_duplicate_spikes`.
+    full_amp : np.ndarray.
+        Only returned if `load_extra_vars` is True.
+        Per-spike amplitudes, computed as the L2 norm of the PC features
+        for each spike.
+        Includes spikes removed by `kilosort.postprocessing.remove_duplicate_spikes`.
+    
+    '''
     if device is None:
         if torch.cuda.is_available():
             device = torch.device('cuda')
@@ -700,13 +772,15 @@ def load_sorting(results_dir, device=None, load_extra_vars=False):
 
     clu = np.load(results_dir / 'spike_clusters.npy')
     st = np.load(results_dir / 'spike_times.npy')
+    kept_spikes = np.load(results_dir / 'kept_spikes.npy')
     acg_threshold = ops['settings']['acg_threshold']
     ccg_threshold = ops['settings']['ccg_threshold']
     is_ref, est_contam_rate = CCG.refract(clu, st / ops['fs'],
                                           acg_threshold=acg_threshold,
                                           ccg_threshold=ccg_threshold)
 
-    results = [ops, st, clu, similar_templates, is_ref, est_contam_rate]
+    results = [ops, st, clu, similar_templates, is_ref,
+               est_contam_rate, kept_spikes]
 
     if load_extra_vars:
         # NOTE: tF and Wall always go on CPU, not CUDA

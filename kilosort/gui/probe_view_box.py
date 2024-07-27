@@ -12,8 +12,6 @@ logger = setup_logger(__name__)
 
 class ProbeViewBox(QtWidgets.QGroupBox):
 
-    channelSelected = QtCore.Signal(int)
-
     def __init__(self, parent):
         super(ProbeViewBox, self).__init__(parent=parent)
         self.setTitle("Probe View")
@@ -64,6 +62,7 @@ class ProbeViewBox(QtWidgets.QGroupBox):
         self.spot_scale.valueChanged.connect(self.refresh_plot)
 
         layout = QtWidgets.QVBoxLayout()
+        layout.addWidget(QtWidgets.QLabel('Left click to toggle excluded channels'))
         layout.addWidget(self.probe_view, 95)
         layout.addWidget(self.aspect_toggle)
         layout.addWidget(self.template_toggle)
@@ -71,9 +70,9 @@ class ProbeViewBox(QtWidgets.QGroupBox):
         layout.addWidget(self.spot_scale)
         self.setLayout(layout)
 
-    def set_layout(self, context):
+    def set_layout(self):
         self.probe_view.clear()
-        probe = context.raw_probe
+        probe = self.gui.settings_box.probe_layout  # original, no removed chans
         template_args = self.gui.settings_box.get_probe_template_args()
         self.set_active_layout(probe, template_args)
         self.update_probe_view()
@@ -81,15 +80,22 @@ class ProbeViewBox(QtWidgets.QGroupBox):
     def set_active_layout(self, probe, template_args):
         self.active_layout = probe
         self.kcoords = self.active_layout["kcoords"]
-        self.xc, self.yc = self.active_layout["xc"], self.active_layout["yc"]
+        # Set xc, yc based on revised probe (with bad channels removed) for
+        # determining template and center positions, since that's how they would
+        # be placed during sorting.
+        probe = self.gui.probe_layout
+        self.xc, self.yc = probe['xc'], probe['yc']
         if self.template_toggle.isChecked() or self.center_toggle.isChecked():
             self.xcup, self.ycup, self.ops = self.get_template_spots(*template_args)
             self.xcent_pos, self.ycent_pos = self.get_center_spots()
+
+        # Change xc, yc back to original probe for plotting all channels.
+        self.xc, self.yc = self.active_layout["xc"], self.active_layout["yc"]
+        self.total_channels = self.active_layout["n_chan"]
+        self.channel_map = self.active_layout["chanMap"]
         self.channel_map_dict = {}
         for ind, (xc, yc) in enumerate(zip(self.xc, self.yc)):
             self.channel_map_dict[(xc, yc)] = ind
-        self.total_channels = self.active_layout["n_chan"]
-        self.channel_map = self.active_layout["chanMap"]
 
     def get_template_spots(self, nC, dmin, dminx, max_dist, x_centers, device):
         ops = {
@@ -113,7 +119,6 @@ class ProbeViewBox(QtWidgets.QGroupBox):
         return xs, ys, ops
 
     def get_center_spots(self):
-        dmin = self.ops['dmin']
         ycent = y_centers(self.ops)
         xcent = x_centers(self.ops)
 
@@ -126,7 +131,7 @@ class ProbeViewBox(QtWidgets.QGroupBox):
     @QtCore.Slot()
     def refresh_plot(self):
         template_args = self.gui.settings_box.get_probe_template_args()
-        self.preview_probe(self.gui.settings_box.probe_layout, template_args)
+        self.preview_probe(template_args)
 
     @QtCore.Slot(str, int)
     def synchronize_data_view_mode(self, mode: str):
@@ -142,12 +147,18 @@ class ProbeViewBox(QtWidgets.QGroupBox):
         channel_spots = []
         template_spots = []
         center_spots = []
+        bad_channels = self.gui.settings_box.get_bad_channels()
 
         if self.xc is not None:
             size = 10 * self.spot_scale.value()/4
             symbol = "s"
-            color = "g"
             for x_pos, y_pos in zip(self.xc, self.yc):
+                index = self.channel_map_dict[(x_pos, y_pos)]
+                channel = self.channel_map[index]
+                if channel in bad_channels:
+                    color = "b"
+                else:
+                    color = "g"
                 pen = pg.mkPen(0.5)
                 brush = pg.mkBrush(color)
                 channel_spots.append({
@@ -187,9 +198,10 @@ class ProbeViewBox(QtWidgets.QGroupBox):
     def update_probe_view(self):
         self.create_plot()
 
-    @QtCore.Slot(object, object)
-    def preview_probe(self, probe, template_args):
+    @QtCore.Slot(object)
+    def preview_probe(self, template_args):
         self.probe_view.clear()
+        probe = self.gui.settings_box.probe_layout
         self.set_active_layout(probe, template_args)
         self.create_plot()
 
@@ -200,11 +212,13 @@ class ProbeViewBox(QtWidgets.QGroupBox):
             spots += self.template_spots
         if self.center_toggle.isChecked():
             spots += self.center_spots
-        scatter_plot = pg.ScatterPlotItem(spots)
         if self.aspect_toggle.isChecked():
             self.probe_view.setAspectLocked()
         else:
             self.probe_view.setAspectLocked(lock=False)
+
+        scatter_plot = pg.ScatterPlotItem(spots)
+        scatter_plot.sigClicked.connect(self.on_points_clicked)
         self.probe_view.addItem(scatter_plot)
 
     def reset(self):
@@ -230,3 +244,23 @@ class ProbeViewBox(QtWidgets.QGroupBox):
 
     def clear_plot(self):
         self.probe_view.getPlotItem().clear()
+
+    @QtCore.Slot(object, object)
+    def on_points_clicked(self, points, event):
+        selected_point = points.ptsClicked[0]
+        x_pos = int(selected_point.pos().x())
+        y_pos = int(selected_point.pos().y())
+
+        # Get channel number corresponding to clicked position, use that
+        # to update the list of bad channels before refreshing plot.
+        index = self.channel_map_dict[(x_pos, y_pos)]
+        channel = self.channel_map[index]
+        bad_channels = self.gui.settings_box.get_bad_channels()
+        if channel in bad_channels:
+            # Remove it from the list
+            bad_channels.remove(channel)
+        else:
+            bad_channels.append(channel)
+        self.gui.settings_box.set_bad_channels(bad_channels)
+
+        self.refresh_plot()        
