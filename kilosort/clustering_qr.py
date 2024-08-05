@@ -32,10 +32,11 @@ def neigh_mat(Xd, nskip=10, n_neigh=30):
     n_nodes = Xsub.shape[0]
 
     # search is much faster if array is contiguous
-    Xd = np.ascontiguousarray(Xd)
-    Xsub = np.ascontiguousarray(Xsub)
+    Xd = np.ascontiguousarray(Xd, dtype='float32')
+    Xsub = np.ascontiguousarray(Xsub, dtype='float32')
     print(f"{Xsub=}")
     print(f"{type(Xsub)=}")
+    print(f"{dim=} {Xd.shape=} {Xsub.shape=}")
 
     # exact neighbor search ("brute force")
     # results is dn and kn, kn is n_samples by n_neigh, contains integer indices into Xsub
