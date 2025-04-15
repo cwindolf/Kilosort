@@ -272,7 +272,7 @@ def run_kilosort(settings, probe=None, probe_name=None, filename=None,
             final_pre_merge=final_pre_merge,
             final_clustering=final_clustering,
         )
-    except:
+    except Exception as e:
         if isinstance(e, torch.cuda.OutOfMemoryError):
             logger.exception('Out of memory error, printing performance...')
             log_performance(logger, level='info')
@@ -695,7 +695,8 @@ def detect_spikes(ops, device, bfile, tic0=np.nan, progress_bar=None,
     log_performance(logger, 'info', 'Resource usage after spike detection')
     log_cuda_details(logger)
 
-    return st, tF, Wall, clu, st0
+    # st,tF, Wall, clu, st0, newtimes
+    return st, tF, Wall, clu, st0, ctics
 
 
 def cluster_spikes(st, tF, ops, device, bfile, tic0=np.nan, progress_bar=None,

@@ -23,7 +23,6 @@ def neigh_mat(Xd, nskip=10, n_neigh=30):
 
     # subsampling the feature matrix 
     Xsub = Xd[::nskip]
-    print(f"{Xsub=}")
 
     # n_samples is the number of spikes, dim is number of features
     n_samples, dim = Xd.shape
@@ -34,9 +33,6 @@ def neigh_mat(Xd, nskip=10, n_neigh=30):
     # search is much faster if array is contiguous
     Xd = np.ascontiguousarray(Xd, dtype='float32')
     Xsub = np.ascontiguousarray(Xsub, dtype='float32')
-    print(f"{Xsub=}")
-    print(f"{type(Xsub)=}")
-    print(f"{dim=} {Xd.shape=} {Xsub.shape=}")
 
     # exact neighbor search ("brute force")
     # results is dn and kn, kn is n_samples by n_neigh, contains integer indices into Xsub

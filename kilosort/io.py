@@ -64,7 +64,8 @@ def load_probe(probe_path):
         # Also does not remove reference channel in PHASE3B probes
         contents = probe_path.read_text()
         metadata = {}
-        exec(contents, {}, metadata)
+        import numpy as np
+        exec(contents, globals(), metadata)
         probe['chanMap'] = []
         probe['xc'] = []
         probe['yc'] = []
