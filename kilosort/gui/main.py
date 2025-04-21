@@ -18,18 +18,20 @@ from qtpy import QtCore, QtGui, QtWidgets
 logger = setup_logger(__name__)
 
 
-class KiloSortGUI(QtWidgets.QMainWindow):
-    def __init__(self, application, filename=None, device=None,
+class KilosortGUI(QtWidgets.QMainWindow):
+    def __init__(self, application, filename=None, reset=False, skip_load=False,
                  **kwargs):
-        super(KiloSortGUI, self).__init__(**kwargs)
+        super(KilosortGUI, self).__init__(**kwargs)
 
         self.app = application
         self.qt_settings = QtCore.QSettings('Janelia', 'Kilosort4')
-        if device is None:
-            if torch.cuda.is_available():
-                device = torch.device('cuda')
-            else:
-                device = torch.device('cpu')
+        if reset:
+            self.qt_settings.clear()
+
+        if torch.cuda.is_available():
+            device = torch.device('cuda')
+        else:
+            device = torch.device('cpu')
         self.device = device
 
         if filename is not None:
@@ -103,10 +105,10 @@ class KiloSortGUI(QtWidgets.QMainWindow):
 
         self.header_box = HeaderBox(self)
         self.converter = DataConversionBox(self)
+        self.run_box = RunBox(self)
         self.settings_box = SettingsBox(self)
         self.probe_view_box = ProbeViewBox(self)
         self.data_view_box = DataViewBox(self)
-        self.run_box = RunBox(self)
         self.message_log_box = MessageLogBox(self)
 
         self.setAcceptDrops(True)
@@ -117,7 +119,7 @@ class KiloSortGUI(QtWidgets.QMainWindow):
         # sub-widgets.
         self.move(100, 100)
 
-        if self.auto_load:
+        if self.auto_load and not skip_load:
             self.settings_box.update_settings()
 
 
@@ -253,6 +255,7 @@ class KiloSortGUI(QtWidgets.QMainWindow):
 
         # Connect signals
         self.header_box.reset_gui_button.clicked.connect(self.reset_gui)
+        self.header_box.clear_cache_button.clicked.connect(self.clear_cache)
         self.settings_box.settingsUpdated.connect(self.load_data)
         self.settings_box.previewProbe.connect(self.set_parameters)
         self.settings_box.previewProbe.connect(self.probe_view_box.set_layout)
@@ -341,6 +344,7 @@ class KiloSortGUI(QtWidgets.QMainWindow):
         params['clear_cache'] = self.run_box.clear_cache_check.isChecked()
         params['do_CAR'] = self.run_box.do_CAR_check.isChecked()
         params['invert_sign'] = self.run_box.invert_sign_check.isChecked()
+        params['verbose_log'] = self.run_box.verbose_check.isChecked()
 
         assert params
 
@@ -357,8 +361,6 @@ class KiloSortGUI(QtWidgets.QMainWindow):
             self.setup_data_view()
             self.update_run_box()
             self.data_view_box.whitened_button.click()
-        except Exception as e:
-            print(e)
         finally:
             self.disable_all_input(False)
             QtWidgets.QApplication.restoreOverrideCursor()
@@ -378,80 +380,51 @@ class KiloSortGUI(QtWidgets.QMainWindow):
         shift = self.params['shift']
         scale = self.params['scale']
 
+        args = [self.data_path, n_channels]
+        kwargs = {
+            'fs': sample_rate, 'chan_map': chan_map, 'device': self.device,
+            'tmin': tmin, 'tmax': tmax, 'shift': shift, 'scale': scale,
+            'artifact_threshold': artifact, 'dtype': data_dtype,
+            'file_object': self.file_object
+        }
+
         if chan_map.max() >= n_channels:
             raise ValueError(
                 f'Largest value of chanMap exceeds channel count of data, '
                 'make sure chanMap is 0-indexed.'
             )
 
-        binary_file = BinaryFiltered(
-            filename=self.data_path,
-            n_chan_bin=n_channels,
-            fs=sample_rate,
-            chan_map=chan_map,
-            device=self.device,
-            dtype=data_dtype,
-            tmin=tmin,
-            tmax=tmax,
-            artifact_threshold=artifact,
-            shift=shift,
-            scale=scale,
-            file_object=self.file_object
-        )
-
+        # Load raw data
+        binary_file = BinaryFiltered(*args, **kwargs)
         self.context.binary_file = binary_file
 
+        # Load high-pass filtered data to compute whitening matrix
         self.context.highpass_filter = preprocessing.get_highpass_filter(
-            fs=sample_rate,
-            cutoff=cutoff,
-            device=self.device
-        )
-
-        with BinaryFiltered(
-            filename=self.data_path,
-            n_chan_bin=n_channels,
-            fs=sample_rate,
-            chan_map=chan_map,
+            fs=sample_rate, cutoff=cutoff, device=self.device
+            )
+        bfile_whiten = BinaryFiltered(
+            *args, **kwargs,
             hp_filter=self.context.highpass_filter,
-            device=self.device,
-            dtype=data_dtype,
-            tmin=tmin,
-            tmax=tmax,
-            artifact_threshold=artifact,
-            shift=shift,
-            scale=scale,
-            file_object=self.file_object
-        ) as bin_file:
-            self.context.whitening_matrix = preprocessing.get_whitening_matrix(
-                f=bin_file,
-                xc=xc,
-                yc=yc,
-                nskip=nskip,
             )
 
+        # Load high-pass filtered and whitened data
+        self.context.whitening_matrix = preprocessing.get_whitening_matrix(
+            f=bfile_whiten, xc=xc, yc=yc, nskip=nskip,
+            )
+        del bfile_whiten  # only used for computing whitening matrix
+
         filt_binary_file = BinaryFiltered(
-            filename=self.data_path,
-            n_chan_bin=n_channels,
-            fs=sample_rate,
-            chan_map=chan_map,
+            *args, **kwargs,
             hp_filter=self.context.highpass_filter,
             whiten_mat=self.context.whitening_matrix,
-            device=self.device,
-            dtype=data_dtype,
-            tmin=tmin,
-            tmax=tmax,
-            artifact_threshold=artifact,
-            shift=shift,
-            scale=scale,
-            file_object=self.file_object
-        )
-
+            )
         self.context.filt_binary_file = filt_binary_file
 
         self.data_view_box.set_whitening_matrix(self.context.whitening_matrix)
         self.data_view_box.set_highpass_filter(self.context.highpass_filter)
 
     def add_file_object(self):
+        # Only needed for file objects loaded through data conversion tool.
         self.file_object = self.converter.file_object
         # NOTE: This filename will not actually be loaded the usual way, it's
         #       just there to keep track of where the data is coming from
@@ -460,6 +433,7 @@ class KiloSortGUI(QtWidgets.QMainWindow):
         self.settings_box.use_file_object = True
         self.settings_box.data_file_path = Path(filename)
         self.settings_box.data_file_path_input.setText(filename)
+        self.settings_box.path_check = True
 
     def setup_data_view(self):
         self.data_view_box.setup_seek(self.context)
@@ -536,38 +510,29 @@ class KiloSortGUI(QtWidgets.QMainWindow):
         self.data_view_box.prepare_for_new_context()
         self.probe_view_box.prepare_for_new_context()
         self.message_log_box.prepare_for_new_context()
-
-        self.close_binary_files()
-
         self.context = None
 
-    def close_binary_files(self):
-        if self.context is not None:
-            if self.context.binary_file is not None:
-                self.context.binary_file.close()
-
-            if self.context.filt_binary_file is not None:
-                self.context.filt_binary_file.close()
-
+    @QtCore.Slot()
     def reset_gui(self):
         self.num_channels = None
         self.context = None
-        self.close_binary_files()
         self.probe_view_box.reset()
         self.data_view_box.reset()
         self.settings_box.reset()
         self.message_log_box.reset()
 
+    @QtCore.Slot()
+    def clear_cache(self):
+        self.qt_settings.clear()
+
     def closeEvent(self, event: QtGui.QCloseEvent):
         # Make sure all threads and pop-out windows are closed as well.
-        self.message_log_box.save_log_file()
         self.message_log_box.popout_window.close()
         for _, p in self.run_box.plots.items():
             p.close()
         self.run_box.current_worker.terminate()
         if self.converter.conversion_thread is not None:
             self.converter.conversion_thread.terminate()
-        self.close_binary_files()
 
         event.accept()
 

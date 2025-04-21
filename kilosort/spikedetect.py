@@ -1,4 +1,5 @@
 import os
+import gc
 import logging
 import warnings
 logger = logging.getLogger(__name__)
@@ -72,15 +73,18 @@ def extract_wPCA_wTEMP(ops, bfile, nt=61, twav_min=20, Th_single_ch=6, nskip=25,
     wPCA = torch.from_numpy(model.components_).to(device).float()
 
     with warnings.catch_warnings():
-        warnings.filterwarnings("ignore", message="")
-        # Prevents memory leak for KMeans when using MKL on Windows
         msg = 'KMeans is known to have a memory leak on Windows with MKL'
-        nthread = os.environ.get('OMP_NUM_THREADS', msg)
+        warnings.filterwarnings("ignore", message=msg)
+        # Prevents memory leak for KMeans when using MKL on Windows
+        nthread = os.environ.get('OMP_NUM_THREADS')
         os.environ['OMP_NUM_THREADS'] = '7'
         model = KMeans(n_clusters=ops['settings']['n_templates'], n_init = 10).fit(clips)
         wTEMP = torch.from_numpy(model.cluster_centers_).to(device).float()
         wTEMP = wTEMP / (wTEMP**2).sum(1).unsqueeze(1)**.5
-        os.environ['OMP_NUM_THREADS'] = nthread
+        if nthread is not None:
+            os.environ['OMP_NUM_THREADS'] = nthread
+        else:
+            os.environ.pop('OMP_NUM_THREADS')
 
     return wPCA, wTEMP
 
@@ -120,34 +124,23 @@ def template_centers(ops):
     ops['yup'] = np.unique(yup)
     ops['xup'] = np.unique(xup)
 
-    # Set max channel distance based on dmin, dminx, use whichever is greater.
-    if ops.get('max_channel_distance', None) is None:
-        ops['max_channel_distance'] = max(dmin, dminx)
-
     return ops
 
 
 def template_match(X, ops, iC, iC2, weigh, device=torch.device('cuda')):
-    NT = X.shape[-1]
     nt = ops['nt']
-    Nchan = ops['Nchan']
+    nt0 = ops['settings']['nt0min']
+    nk = ops['settings']['n_templates']
+    NT = X.shape[-1]
     Nfilt = iC.shape[1]
-
-    tch0 = torch.zeros(1,device = device)
-    tch1 = torch.ones(1,device = device)
+    niter = 40
+    nb = (NT-1)//niter+1
 
     W = ops['wTEMP'].unsqueeze(1)
     B = conv1d(X.unsqueeze(1), W, padding=nt//2)
-
-    nt0 = ops['settings']['nt0min']
-    nk = ops['settings']['n_templates']
-
-    niter = 40
-    nb = (NT-1)//niter+1
     As    = torch.zeros((Nfilt, NT), device=device)
     Amaxs = torch.zeros((Nfilt, NT), device=device)
     imaxs = torch.zeros((Nfilt, NT), dtype = torch.int64, device=device)
-
     ti = torch.arange(Nfilt, device = device)
     tj = torch.arange(nb, device = device)
 
@@ -201,9 +194,10 @@ def yweighted(yc, iC, adist, xy, device=torch.device('cuda')):
     return yct
 
 def run(ops, bfile, device=torch.device('cuda'), progress_bar=None,
-        clear_cache=False):        
+        clear_cache=False, verbose=False):        
     sig = ops['settings']['min_template_size']
-    nsizes = ops['settings']['template_sizes'] 
+    nsizes = ops['settings']['template_sizes']
+    nb = ops['Nbatches']
 
     if ops['settings']['templates_from_data']:
         logger.info('Re-computing universal templates from data.')
@@ -255,10 +249,12 @@ def run(ops, bfile, device=torch.device('cuda'), progress_bar=None,
     logger.info('Detecting spikes...')
     prog = tqdm(np.arange(bfile.n_batches), miniters=200 if progress_bar else None, 
                 mininterval=60 if progress_bar else None)
+    # repeat performance log after every 10 minutes of data
+    log_skip = int(600 / (ops['batch_size'] / ops['fs']))
     try:
         for ibatch in prog:
-            if ibatch % 100 == 0:
-                log_performance(logger, 'debug', f'Batch {ibatch}')
+            if ibatch % log_skip == 0:
+                log_performance(logger, 'debug', f'Batch {ibatch} of {nb-1} ({100*(ibatch/nb):.1f}%)')
 
             X = bfile.padded_batch_to_torch(ibatch, ops)
             xy, imax, amp, adist = template_match(X, ops, iC, iC2, weigh, device=device)
@@ -282,16 +278,24 @@ def run(ops, bfile, device=torch.device('cuda'), progress_bar=None,
             st[k:k+nsp,6] = xy[:,1].cpu().numpy()
 
             k = k + nsp
-            
+            if clear_cache:
+                gc.collect()
+                torch.cuda.empty_cache()
+
             if progress_bar is not None:
                 progress_bar.emit(int((ibatch+1) / bfile.n_batches * 100))
     except:
         logger.exception(f'Error in spikedetect.run on batch {ibatch}')
-        logger.debug(f'X shape: {X.shape}')
-        logger.debug(f'xy shape: {xy.shape}')
+        try:
+            logger.debug(f'X shape: {X.shape}')
+            logger.debug(f'xy shape: {xy.shape}')
+        except UnboundLocalError:
+            # Error happened before one or both of these was assigned,
+            # no need to raise an additional error for this.
+            pass
         raise
             
-    log_performance(logger, 'debug', f'Batch {ibatch}')
+    log_performance(logger, 'debug', f'Batch {ibatch} of {nb-1} ({100*(ibatch/nb):.1f}%)')
 
     st = st[:k]
     tF = tF[:k]

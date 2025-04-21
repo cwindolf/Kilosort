@@ -34,7 +34,6 @@ def find_binary(data_dir: Union[str, os.PathLike]) -> Path:
             '*.bin, *.bat, *.dat, or *.raw.'
             )
 
-    # TODO: Why give this preference? Not all binary files will have this tag.
     # If there are multiple binary files, find one with "ap" tag
     if len(filenames) > 1:
         filenames = [f for f in filenames if 'ap.bin' in f.as_posix()]
@@ -63,9 +62,10 @@ def load_probe(probe_path):
         # !DOES NOT WORK FOR PHASE3A PROBES WITH DISCONNECTED CHANNELS!
         # Also does not remove reference channel in PHASE3B probes
         contents = probe_path.read_text()
-        metadata = {}
-        import numpy as np
-        exec(contents, globals(), metadata)
+        metadata = {'np': np}
+        exec(contents, {}, metadata)
+        # TODO: Figure out an alternative for exec, it's a security risk.
+
         probe['chanMap'] = []
         probe['xc'] = []
         probe['yc'] = []
@@ -225,8 +225,8 @@ def save_to_phy(st, clu, tF, Wall, probe, ops, imin, results_dir=None,
     Parameters
     ----------
     st : np.ndarray
-        3-column array of peak time (in samples), template, and amplitude for
-        each spike.
+        3-column array of peak time (in samples), template, and thresold
+        amplitude for each spike.
     clu : np.ndarray
         1D vector of cluster ids indicating which spike came from which cluster,
         same shape as `st[:,0]`.
@@ -316,6 +316,11 @@ def save_to_phy(st, clu, tF, Wall, probe, ops, imin, results_dir=None,
         `kilosort.io.load_ops`.
     params.py : shape N/A
         Settings used by Phy, like data location and sampling rate.
+    pc_features.npy : shape (n_spikes, n_pcs, nearest_chans)
+        Temporal features for each spike on the nearest channels for the
+        template the spike was assigned to.
+    pc_feature_ind.npy : shape (n_templates, nearest_chans)
+        Channel indices of the nearest channels for each template.
     similar_templates.npy : shape (n_templates, n_templates)
         Similarity score between each pair of templates, computed as correlation
         between templates.
@@ -454,10 +459,13 @@ def save_to_phy(st, clu, tF, Wall, probe, ops, imin, results_dir=None,
         params['hp_filtered'] = True
         params['dat_path'] = f"'{dat_path.resolve().as_posix()}'"
     else:
-        dat_path = Path(ops['settings']['filename'])
+        f = ops['settings']['filename']
+        if not isinstance(f, list): f = [f]
+        dat_path = [Path(p).resolve().as_posix() for p in f]
         params['dtype'] = dtype
         params['hp_filtered'] = False
-        params['dat_path'] = f"'{dat_path.resolve().as_posix()}'"
+        params['dat_path'] = dat_path
+        #params['dat_path'] = f"'{dat_path.resolve().as_posix()}'"
 
     with open((results_dir / 'params.py'), 'w') as f: 
         for key in params.keys():
@@ -567,7 +575,7 @@ class BinaryRWFile:
 
     supported_dtypes = ['int16', 'uint16', 'int32', 'float32']
 
-    def __init__(self, filename: str, n_chan_bin: int, fs: int = 30000, 
+    def __init__(self, filename, n_chan_bin: int, fs: int = 30000, 
                  NT: int = 60000, nt: int = 61, nt0min: int = 20,
                  device: torch.device = None, write: bool = False,
                  dtype: str = None, tmin: float = 0.0, tmax: float = np.inf,
@@ -581,24 +589,30 @@ class BinaryRWFile:
         
         Parameters
         ----------
-        filename : str or Path
-            The filename of the file to read from or write to
+        filename : Path-like or list of Path-likes.
+            The filename of the file(s) to read from or write to
         n_chan_bin : int
             number of channels
         file_object : array-like file object; optional.
             Must have 'shape' and 'dtype' attributes and support array-like
             indexing (e.g. [:100,:], [5, 7:10], etc). For example, a numpy
             array or memmap.
+            Note: `filename` is effectively ignored if `file_object` is not None.
 
         """
-        self.fs = fs
+        # Extra casting statements to ensure that 64-bit values are used
+        # for time samples on very long recordings.
+        self.fs = np.float64(fs)
         self.n_chan_bin = n_chan_bin
         self.filename = filename
-        self.NT = NT 
-        self.nt = nt 
-        self.nt0min = nt0min
+        self.NT = np.int64(NT) 
+        self.nt = np.int64(nt) 
+        self.nt0min = np.int64(nt0min)
         self.shift = shift
         self.scale = scale
+        tmin = np.float64(tmin)
+        tmax = np.float64(tmax)
+
         if device is None:
             if torch.cuda.is_available():
                 device = torch.device('cuda')
@@ -607,6 +621,14 @@ class BinaryRWFile:
         self.device = device
         self.uint_set_warning = True
         self.writable = write
+        self.mode = 'w+' if write else 'r'
+
+        if isinstance(filename, list) and len(filename) > 1:
+            if file_object is not None:
+                raise ValueError('Cannot specify both file_object and a list of files.')
+            f = BinaryFileGroup.from_filenames(filename, n_chan_bin, dtype)
+            file_object = f
+        self.file_object = file_object
 
         if file_object is not None:
             dtype = file_object.dtype
@@ -624,33 +646,24 @@ class BinaryRWFile:
 
         # Must come after dtype since dtype is necessary for nbytesread
         if file_object is None:
-            total_samples = get_total_samples(filename, n_chan_bin, dtype)
+            self.total_samples = get_total_samples(filename, n_chan_bin, dtype)
         else:
             n, c = file_object.shape
             assert c == n_chan_bin
-            total_samples = n
+            self.total_samples = n
 
-        self.imin = max(int(tmin*fs), 0)
-        self.imax = total_samples if tmax==np.inf else min(int(tmax*fs), total_samples)
-        self.n_batches = int(np.ceil(self.n_samples / self.NT))
+        self.imin = max(np.int64(tmin*self.fs), 0)
+        self.imax = self.total_samples if tmax==np.inf \
+                    else min(np.int64(tmax*self.fs), self.total_samples)
+        self.n_batches = np.int64(np.ceil(self.n_samples / self.NT))
 
         # Check if last batch is too small. If so, drop those samples.
         a, b = self.get_batch_edges(self.n_batches-1)
-        batch_size = int(b - a - self.nt)  # Unclear why this casts to float
+        batch_size = b - a - self.nt
         if batch_size < self.nt:
             self.n_batches -= 1
             self.imax -= batch_size
 
-        mode = 'w+' if write else 'r'
-        # Must use total samples for file shape, otherwise the end of the data
-        # gets cut off if tmin,tmax are set.
-        if file_object is not None:
-            # For an already-loaded array-like file object,
-            # such as a NumPy memmap
-            self.file = file_object
-        else:
-            self.file = np.memmap(self.filename, mode=mode, dtype=self.dtype,
-                                  shape=(total_samples, self.n_chan_bin))
 
     @property
     def n_samples(self) -> int:
@@ -680,19 +693,22 @@ class BinaryRWFile:
         size: int
         """
         return np.prod(np.array(self.shape).astype(np.int64))
-
-    def close(self) -> None:
-        """
-        Closes the file.
-        """
-        del(self.file)
-        self.file = None
+    
+    @property
+    def file(self):
+        """Get reference to in-memory file object or open a memmap to file."""
+        if self.file_object is not None:
+            file = self.file_object
+        else:
+            f = self.filename
+            if isinstance(f, list):
+                f = f[0]
+            file = np.memmap(f, mode=self.mode, dtype=self.dtype,
+                             shape=(self.total_samples, self.n_chan_bin))
+        return file
         
     def __enter__(self):
         return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        self.close()
 
     def __setitem__(self, *items):
         if not self.writable:
@@ -714,12 +730,13 @@ class BinaryRWFile:
                 self.uint_set_warning = False
         # Convert back from float to file dtype
         data = data.astype(self.dtype)
-        self.file[sample_indices] = data
-        
-    def __getitem__(self, *items):
-        if self.file is None:
-            raise ValueError('Binary file has been closed, data not accessible.')
 
+        self.file[sample_indices] = data
+        if self.file_object is None:
+            self.file.flush()
+
+
+    def __getitem__(self, *items):
         idx, *crop = items
         # Shift indices by minimum sample index.
         sample_indices = self._get_shifted_indices(idx)
@@ -737,6 +754,7 @@ class BinaryRWFile:
             samples = samples + self.shift
 
         return samples
+    
     
     def _get_shifted_indices(self, idx):
         if not isinstance(idx, tuple): idx = tuple([idx])
@@ -763,19 +781,17 @@ class BinaryRWFile:
             bstart = self.imin
             bend = self.imin + self.NT + self.nt
         else:
-            # Casting to uint64 is to prevent overflow for long recordings.
+            # Casting to int64 is to prevent overflow for long recordings.
             # It's done multiple times because python is stubborn about
             # switching things back to default types.
-            ibatch = np.uint64(ibatch)
-            bstart = np.uint64(self.imin + (ibatch * self.NT) - self.nt)
-            bend = min(self.imax, np.uint64(bstart + self.NT + 2*self.nt))
+            ibatch = np.int64(ibatch)
+            bstart = np.int64(self.imin + (ibatch * self.NT) - self.nt)
+            bend = min(self.imax, np.int64(bstart + self.NT + 2*self.nt))
 
         return bstart, bend
 
     def padded_batch_to_torch(self, ibatch, return_inds=False):
         """ read batches from file """
-        if self.file is None:
-            raise ValueError('Binary file has been closed, data not accessible.')
 
         bstart, bend = self.get_batch_edges(ibatch)
         data = self.file[bstart : bend]
@@ -821,10 +837,12 @@ class BinaryRWFile:
 
 def get_total_samples(filename, n_channels, dtype=np.int16):
     """Count samples in binary file given dtype and number of channels."""
+    if isinstance(filename, list):
+        filename = filename[0]
     bytes_per_value = np.dtype(dtype).itemsize
     bytes_per_sample = np.int64(bytes_per_value * n_channels)
     total_bytes = os.path.getsize(filename)
-    samples = (total_bytes / bytes_per_sample)
+    samples = np.float64(total_bytes / bytes_per_sample)
 
     if samples%1 != 0:
         raise ValueError(
@@ -832,7 +850,7 @@ def get_total_samples(filename, n_channels, dtype=np.int16):
             "incorrect n_chan_bin ('number of channels' in GUI)."
         )
     else:
-        return int(samples)
+        return np.int64(samples)
 
 
 class BinaryFileGroup:
@@ -883,7 +901,9 @@ class BinaryFileGroup:
             n_samples = f.shape[0]
             if time_idx.start < k:
                 # At least part of the data is in this file
-                t = slice(time_idx.start - shift, time_idx.stop - shift)
+                ii = max(int(time_idx.start - shift), 0)
+                jj = max(int(time_idx.stop - shift), 0)
+                t = slice(ii, jj)
                 data.append(f[t, channel_idx])
                 if time_idx.stop <= k:
                     # This is the end of the data to be retrieved
@@ -912,7 +932,7 @@ class BinaryFileGroup:
                           shape=(n_samples, n_channels))
             files.append(f)
         
-        return files
+        return BinaryFileGroup(files)
 
 
 class BinaryFiltered(BinaryRWFile):

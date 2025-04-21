@@ -1,8 +1,10 @@
 import os, tempfile, shutil, pathlib, psutil
 import importlib.util
 import logging
+import pprint
 logger = logging.getLogger(__name__)
 
+import numpy as np
 from tqdm import tqdm
 from urllib.request import urlopen
 from urllib.error import HTTPError
@@ -21,15 +23,15 @@ _DOWNLOADS_DIR_ENV = os.environ.get("KILOSORT_LOCAL_DOWNLOADS_PATH")
 _DOWNLOADS_DIR_DEFAULT = pathlib.Path.home().joinpath('.kilosort')
 DOWNLOADS_DIR = pathlib.Path(_DOWNLOADS_DIR_ENV) if _DOWNLOADS_DIR_ENV else _DOWNLOADS_DIR_DEFAULT
 PROBE_DIR = DOWNLOADS_DIR.joinpath('probes')
+PROBE_URLS = {
+    # Same as Linear16x1_kilosortChanMap.mat
+    'Linear16x1_test.mat': 'https://osf.io/download/67f012cbc56bef203cb25416/',
+    # Same as neuropixPhase3B1_kilosortChanMap.mat
+    'NeuroPix1_default.mat': 'https://osf.io/download/67f012cc7e1fd38cad82980a/',
+    # Same as NP2_kilosortChanMap.mat
+    'NeuroPix2_default.mat': 'https://osf.io/download/67f012ce033d25194f829812/'
+}
 
-# use mat file probes because they enable disconnected channels
-probe_names = [
-    'neuropixPhase3A_kilosortChanMap.mat',
-    'neuropixPhase3B1_kilosortChanMap.mat',\
-    'neuropixPhase3B2_kilosortChanMap.mat',
-    'NP2_kilosortChanMap.mat', 
-    'Linear16x1_kilosortChanMap.mat',
-    ]
 
 def template_path(basename='wTEMP.npz'):
     """ currently only one set of example templates to use"""
@@ -48,8 +50,7 @@ def download_probes(probe_dir=None):
     if probe_dir is None:
         probe_dir = PROBE_DIR
     probe_dir.mkdir(parents=True, exist_ok=True)
-    for probe_name in probe_names:
-        url = f'{_DOWNLOADS_URL}/{probe_name}'
+    for probe_name, url in PROBE_URLS.items():
         cached_file = os.fspath(probe_dir.joinpath(probe_name)) 
         if not os.path.exists(cached_file):
             logger.info('Downloading: "{}" to {}\n'.format(url, cached_file))
@@ -134,15 +135,15 @@ def log_performance(log=None, level=None, header=None):
         getattr(log, level)(f'{header}')
 
     getattr(log, level)('*'*56)
-    # TODO: This part is slow, on the order of ms versus micro-seconds for GPU check.
-    #       Find a faster way to check main memory and cpu usage.
     getattr(log, level)(f'CPU usage:    {psutil.cpu_percent():5.2f} %')
 
     memory = psutil.virtual_memory()
-    used = memory.used / 2**30
+    avail = memory.available / 2**30
     total = memory.total / 2**30
-    pct = (used / total) * 100
-    getattr(log, level)(f'Memory:       {pct:5.2f} %     |{used:10.2f}   / {total:8.2f} GB')
+    used = total - avail
+    pct = memory.percent
+    getattr(log, level)(f'Mem used:     {pct:5.2f} %     | {used:10.2f} GB')
+    getattr(log, level)(f'Mem avail:    {avail:5.2f} / {total:5.2f} GB')
     getattr(log, level)('-'*54)
 
     if torch.cuda.is_available():
@@ -171,7 +172,52 @@ def log_performance(log=None, level=None, header=None):
     getattr(log, level)('*'*56)
 
 
-def log_cuda_details(log):
+def log_cuda_details(log=None):
     """Log a detailed summary of cuda stats from `torch.cuda.memory_summary`."""
+    if log is None: log = logger
     if torch.cuda.is_available():
         log.debug(f'\n\n{torch.cuda.memory_summary(abbreviated=True)}\n')
+
+
+def probe_as_string(probe):
+    """Format probe dictionary as copy-pasteable-to-code string."""
+
+    # Set numpy to print full arrays
+    opt = np.get_printoptions()
+    np.set_printoptions(threshold=np.inf)
+    
+    p = pprint.pformat(probe, indent=4, sort_dicts=False)
+    # insert `np.` so that text can be copied directly to code
+    p = 'np.array'.join(p.split('array'))
+    p = 'dtype=np.'.join(p.split('dtype='))
+    probe_text = "probe = "
+    # Put curly braces on separate lines
+    probe_text += p[0] + '\n ' + p[1:-1] + '\n' + p[-1]
+
+    # Revert numpy settings
+    np.set_printoptions(**opt)
+
+    return probe_text
+
+
+def ops_as_string(ops):
+    """Format ops dictionary as copy-pasteable-to-code string.
+    
+    Notes
+    -----
+    Keys for `settings` and `probe` are removed since they contain a lot of
+    redundant information and are difficult to format in a nested way. See
+    `probe_as_string` for printing probe information.
+    
+    """
+
+    ops_copy = ops.copy()
+    probe_keys = list(ops['probe'].keys())
+    for k in ['settings', 'probe'] + probe_keys:
+        _ = ops_copy.pop(k)
+    ops_text = "ops = "
+    p = pprint.pformat(ops_copy, indent=4, sort_dicts=False)
+    # Put curly braces on separate lines
+    ops_text += p[0] + '\n ' + p[1:-1] + '\n' + p[-1]
+
+    return ops_text
