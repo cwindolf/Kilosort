@@ -233,7 +233,6 @@ def run_kilosort(
         file_object,
         progress_bar,
         dredge_motion_est=dredge_motion_est,
-        ctics=ctics,
     )
 
     return (
@@ -384,7 +383,7 @@ def _sort(
 
         # Sort spikes and save results
         logger.info("About to run detect_spikes")
-        st, tF, Wall0, clu0, newtimes = detect_spikes(
+        st, tF, Wall0, clu0, st0, newtimes = detect_spikes(
             ops,
             device,
             bfile,
@@ -398,7 +397,7 @@ def _sort(
         first_clustering = np.c_[
             # trying to reconstruct peak times...
             st0[:, 6] + ops["batch_size"] * st0[:, 4] - ops["nt"] - ops["nt0min"],
-            clu,
+            clu0,
             st0[:, 2],
         ]
         first_matching = st
