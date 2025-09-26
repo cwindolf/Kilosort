@@ -140,6 +140,17 @@ EXTRA_PARAMETERS = {
             """
     },
 
+    'batch_downsampling': {
+        'gui_name': 'batch downsampling', 'type': int, 'min': 1, 'max': np.inf,
+        'exclude': [], 'default': 1, 'step': 'data',
+        'description':
+            """
+            Number of batches skipped for each batch used for sorting. For example,
+            if `batch_downsampling = 10`, then only every 10th batch will be used.
+            In general, this should be left as the default (using all batches).
+            """
+    },
+
     ### PREPROCESSING
     'artifact_threshold': {
         'gui_name': 'artifact threshold', 'type': float, 'min': 0, 'max': np.inf,
@@ -370,16 +381,6 @@ EXTRA_PARAMETERS = {
             """
     },
 
-    'cluster_downsampling': {
-        'gui_name': 'cluster downsampling', 'type': int, 'min': 1, 'max': np.inf,
-        'exclude': [], 'default': 20, 'step': 'clustering',
-        'description':
-            """
-            Inverse fraction of nodes used as landmarks during clustering
-            (can be 1, but that slows down the optimization). 
-            """
-    },
-
     'cluster_neighbors': {
         'gui_name': 'cluster neighbors', 'type': int, 'min': 2, 'max': np.inf,
         'exclude': [], 'default': 10, 'step': 'clustering',
@@ -392,6 +393,44 @@ EXTRA_PARAMETERS = {
             """ 
     },
 
+    'cluster_downsampling': {
+        'gui_name': 'cluster downsampling', 'type': int, 'min': 1, 'max': np.inf,
+        'exclude': [], 'default': 1, 'step': 'clustering',
+        'description':
+            """
+            Inverse fraction of spikes used as landmarks during clustering. By
+            default, all spikes are used up to a maximum of
+            `max_cluster_subset=25000`.
+
+            The old default behavior (version < 4.1.0) is
+            equivalent to `max_cluster_subset=None, cluster_downsampling=20`.
+            """
+    },
+
+    'max_cluster_subset': {
+        'gui_name': 'max cluster subset', 'type': int, 'min': 1, 'max': np.inf,
+        'exclude': [np.inf], 'default': 25000, 'step': 'clustering',
+        'description':
+            """
+            Maximum number of spikes to use when searching for nearest neighbors
+            to build the graph used for clustering. Within each clustering center,
+            only a subset of spikes is searched with the size determined by
+            `cluster_downsampling` and the total number of spikes. This sets
+            a maximum on the size of that subset, so that it will not grow without
+            bound for very long recordings. Using a very large number of spikes
+            is not necessary and causes performance bottlenecks.
+
+            Use `max_cluster_subset = None` if you do not want a limit on
+            the subset size. The old default behavior (version < 4.1.0) is
+            equivalent to `max_cluster_subset=None, cluster_downsampling=20`.
+
+            Note: In practice, the actual number of spikes used may increase or
+            decrease slightly while staying under the maximum. This happens
+            because the maximum is set by adjusting `cluster_downsampling` on the
+            fly so that it results in a set no larger than the given size.
+            """
+    },
+
     'x_centers': {
         'gui_name': 'x centers', 'type': int, 'min': 1,
         'max': np.inf, 'exclude': [], 'default': None, 'step': 'clustering',
@@ -402,6 +441,16 @@ EXTRA_PARAMETERS = {
             by finding peaks in channel density. For 2D array type probes, we
             recommend specifying this so that centers are placed every few
             hundred microns.
+            """
+    },
+
+    'cluster_init_seed': {
+        'gui_name': 'cluster init seed', 'type': int, 'min': 1, 'max': np.inf,
+        'exclude': [], 'default': 5, 'step': 'clustering',
+        'description':
+            """
+            Random seed for kmeans++ algorithm used to initialize the graph
+            for clustering.
             """
     },
 

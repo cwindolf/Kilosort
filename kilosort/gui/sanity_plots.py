@@ -7,7 +7,6 @@ import matplotlib
 import torch
 from qtpy import QtWidgets
 
-from kilosort.postprocessing import compute_spike_positions
 from kilosort.plots import COLOR_CODES, PROBE_PLOT_COLORS
 
 
