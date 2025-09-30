@@ -230,7 +230,8 @@ def run_kilosort(
         setup_logger(_results_dir, verbose_console=verbose_console)
 
         ops, st, clu, tF, Wall, similar_templates, \
-            is_ref, est_contam_rate, kept_spikes = _sort(
+            is_ref, est_contam_rate, kept_spikes, \
+            detailed_results, ctics = _sort(
                 _filename, _results_dir, _probe, settings, data_dtype, device,
                 do_CAR, clear_cache, invert_sign, save_preprocessed_copy,
                 verbose_log, save_extra_vars, file_object, progress_bar,
@@ -1086,6 +1087,7 @@ def cluster_spikes(
     logger.debug(f'clu shape: {clu.shape}')
     logger.debug(f'Wall shape: {Wall.shape}')
     log_thread_count(logger)
+    final_pre_merge = clu.copy()
 
     tic = time.time()
     logger.info(" ")
