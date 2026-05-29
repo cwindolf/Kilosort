@@ -1,5 +1,10 @@
 # Kilosort4
 
+**If you use Kilosort 1-4, please cite the [paper](https://www.nature.com/articles/s41592-024-02232-7):**     
+Pachitariu, M., Sridhar, S., Pennington, J., & Stringer, C. (2024). Spike sorting with Kilosort4. _Nature Methods_ , 21, pages 914–921
+
+<img src="https://github.com/MouseLand/Kilosort/blob/main/docs/kilosort_logo_small.png" alt="logo" width="300"/>
+
 [![Documentation Status](https://readthedocs.org/projects/kilosort/badge/?version=latest)](https://kilosort.readthedocs.io/en/latest/?badge=latest)
 ![tests](https://github.com/mouseland/kilosort/actions/workflows/test_and_deploy.yml/badge.svg)
 [![PyPI version](https://badge.fury.io/py/kilosort.svg)](https://badge.fury.io/py/kilosort)
@@ -20,9 +25,6 @@ Example notebooks are provided in the `docs/source/tutorials` folder and in the 
   1. `basic_example`:  sets up run on example data and shows how to modify parameters  
   2. `load_data`:  example data format conversion through SpikeInterface  
   3. `make_probe`:  making a custom probe configuration.
-
-**If you use Kilosort1-4, please cite the [paper](https://www.nature.com/articles/s41592-024-02232-7):**     
-Pachitariu, M., Sridhar, S., Pennington, J., & Stringer, C. (2024). Spike sorting with Kilosort4. _Nature Methods_ , 21, pages 914–921
 
 **Warning**: There were two bugs in Kilosort 2, 2.5 and 3 (but not 4) which caused fewer spikes to be detected in ~7ms periods at batch boundaries (every 2.1866s, issue #594). The patch1 releases fix these bugs, please use the new default NT and ntbuff parameters. Also, we are no longer providing in-depth support for Kilosort 1-3. If you encounter difficulties using the older versions, we recommend trying Kilosort4 instead.
 

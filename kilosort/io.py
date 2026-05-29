@@ -134,7 +134,7 @@ def load_probe(probe_path):
 
     return probe
 
-  
+
 def save_probe(probe_dict, filepath):
     """Save a probe dictionary to a .json text file.
 
@@ -482,10 +482,15 @@ def save_ops(ops, results_dir=None):
     # Convert paths to strings before saving, otherwise ops can only be loaded
     # on the system that originally ran the code (causes problems for tests).
     ops['settings']['results_dir'] = str(results_dir)
-    # TODO: why do these get saved twice?
-    ops['filename'] = str(ops['filename'])
+    if isinstance(ops['filename'], list):
+        ops['filename'] = [str(f) for f in ops['filename']]
+    else:
+        ops['filename'] = str(ops['filename'])
     ops['data_dir'] = str(ops['data_dir'])
-    ops['settings']['filename'] = str(ops['settings']['filename'])
+    if isinstance(ops['settings']['filename'], list):
+        ops['settings']['filename'] = [str(f) for f in ops['settings']['filename']]
+    else:
+        ops['settings']['filename'] = str(ops['settings']['filename'])
     ops['settings']['data_dir'] = str(ops['settings']['data_dir'])
 
     # Convert pytorch tensors to numpy arrays before saving, otherwise loading
@@ -646,7 +651,7 @@ class BinaryRWFile:
         a, b = self._get_batch_edges(self.n_batches_raw-1)
         batch_size = b - a - self.nt
         if batch_size < self.nt:
-            self.n_batches -= 1
+            self.n_batches_raw -= 1
             self.imax -= batch_size
 
         self.set_downsampling(batch_downsampling)

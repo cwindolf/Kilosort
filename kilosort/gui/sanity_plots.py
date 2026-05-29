@@ -39,7 +39,7 @@ def plot_drift_amount(plot_window, dshift, settings):
     p1.setTitle('Drift amount per probe section, across batches')
     fs = settings['fs']
     NT = settings['batch_size']
-    t = np.arange(dshift.shape[0])*(NT/fs)
+    t = np.arange(dshift.shape[0])*(NT/fs) + settings['tmin']
 
     for i in range(dshift.shape[1]):
         color = COLOR_CODES[i % len(COLOR_CODES)]
@@ -57,9 +57,9 @@ def plot_drift_scatter(plot_window, st0, settings):
     )
     p1.setTitle('Spike amplitude across time and depth', color='black')
 
-    x = st0[:,0]  # spike time in seconds
-    y = st0[:,1]  # depth of spike center in microns
-    z = st0[:,2]  # spike amplitude (data)
+    x = st0[:,0] + settings['tmin']  # spike time in seconds
+    y = st0[:,1]                     # depth of spike center in microns
+    z = st0[:,2]                     # spike amplitude (data)
     z[z < 10] = 10
     z[z > 100] = 100
 
@@ -160,7 +160,7 @@ def plot_spike_positions(plot_window, clu, is_refractory, settings):
     # 10 colors in palette, last one is gray for non-frefractory
     clu = clu.copy()
     bad_units = np.unique(clu)[is_refractory == 0]
-    bad_idx = np.in1d(clu, bad_units)
+    bad_idx = np.isin(clu, bad_units)
     clu = np.mod(clu, 9)
     clu[bad_idx] = 9
     cm = (PROBE_PLOT_COLORS*255).astype('int')  # convert to pyqtgraph format
